@@ -1,4 +1,4 @@
-const CACHE_NAME = 'c54-casino-v8';
+const CACHE_NAME = 'c54-casino-v9';
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',
@@ -40,8 +40,9 @@ self.addEventListener('fetch', event => {
     if (url.hostname.includes('googleapis.com') ||
         url.hostname.includes('gstatic.com') ||
         url.hostname.includes('firebaseio.com') ||
-        url.hostname.includes('google.com')) {
-        return; // Let browser handle normally
+        url.hostname.includes('google.com') ||
+        url.hostname.includes('supabase.co')) {
+        return; // Let browser handle normally (includes Realtime websockets)
     }
 
     // For everything else — NETWORK first, fall back to cache
