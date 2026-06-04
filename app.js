@@ -468,20 +468,22 @@ async function saveTpGame() {
             transactions: p.transactions
         }));
 
-        let timeoutId;
-        const timeout = new Promise((_, reject) =>
-            timeoutId = setTimeout(() => reject(new Error('Save timed out — check your internet')), 15000)
-        );
-        const saveOp = db.collection('teenPattiGames').add({
-            date: firebase.firestore.FieldValue.serverTimestamp(),
+        const payload = {
             tokenPrice: tpGame.tokenPrice,
             players: playersArr,
             settlements: tpGame.transfers,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            _type: 'tp'
+        };
+
+        const res = await fetch('/api/saveTpGame', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
 
-        await Promise.race([saveOp, timeout]);
-        clearTimeout(timeoutId);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to save');
+
         toast('✅ Teen Patti game saved!');
         resetTpUI();
     } catch (e) {
@@ -662,21 +664,23 @@ async function saveRumGame() {
             name, rounds: p.rounds, totalPoints: p.total, netBalance: p.netBalance
         }));
 
-        let timeoutId;
-        const timeout = new Promise((_, reject) =>
-            timeoutId = setTimeout(() => reject(new Error('Save timed out — check your internet')), 15000)
-        );
-        const saveOp = db.collection('rummyGames').add({
-            date: firebase.firestore.FieldValue.serverTimestamp(),
+        const payload = {
             pointValue: RUMMY_POINT_VALUE,
             players: playersArr,
             rounds: rumGame.rounds,
             settlements: rumGame.transfers,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            _type: 'rum'
+        };
+
+        const res = await fetch('/api/saveRumGame', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
 
-        await Promise.race([saveOp, timeout]);
-        clearTimeout(timeoutId);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to save');
+
         toast('✅ Rummy game saved!');
         resetRumUI();
     } catch (e) {
@@ -762,23 +766,14 @@ function setupLeaderboard() {
 async function refreshLeaderboard() {
     showLoading();
     try {
-        let timeoutId;
-        const timeout = new Promise((_, reject) =>
-            timeoutId = setTimeout(() => reject(new Error('Leaderboard fetch timeout')), 10000)
-        );
+        const res = await fetch('/api/getLeaderboard');
+        const data = await res.json();
+        
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch');
 
-        const fetchData = async () => {
-            const tpSnap = await db.collection('teenPattiGames').orderBy('createdAt','desc').get();
-            lbData.tp = [];
-            tpSnap.forEach(d => { const data = d.data(); data._id = d.id; lbData.tp.push(data); });
-
-            const rumSnap = await db.collection('rummyGames').orderBy('createdAt','desc').get();
-            lbData.rum = [];
-            rumSnap.forEach(d => { const data = d.data(); data._id = d.id; lbData.rum.push(data); });
-        };
-
-        await Promise.race([fetchData(), timeout]);
-        clearTimeout(timeoutId);
+        lbData.tp = data.tpGames || [];
+        lbData.rum = data.rumGames || [];
+        
     } catch (e) {
         console.warn('Leaderboard load failed:', e.message || e);
         toast('⚠️ ' + (e.message || 'Could not load data — showing cached'));
@@ -855,8 +850,8 @@ function renderHistory(type) {
 
     // Sort by date descending
     games.sort((a, b) => {
-        const da = a.createdAt ? a.createdAt.toDate() : new Date(0);
-        const db2 = b.createdAt ? b.createdAt.toDate() : new Date(0);
+        const da = a.createdAt ? new Date(a.createdAt) : new Date(0);
+        const db2 = b.createdAt ? new Date(b.createdAt) : new Date(0);
         return db2 - da;
     });
 
@@ -867,7 +862,7 @@ function renderHistory(type) {
 
     let html = '';
     games.forEach(g => {
-        const date = g.createdAt ? g.createdAt.toDate().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
+        const date = g.createdAt ? new Date(g.createdAt).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
         const typeCls = g._type === 'tp' ? 'tp' : 'rm';
         const typeLabel = g._type === 'tp' ? 'Teen Patti' : 'Rummy';
         const playerNames = (g.players || []).map(p => p.name).join(', ');
