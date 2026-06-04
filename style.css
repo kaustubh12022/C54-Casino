@@ -581,3 +581,16 @@ button{cursor:pointer;font-family:inherit;outline:none;border:none;}
     display:flex;flex-direction:column;gap:8px;
 }
 
+/* ══════════════════════════════════════════════════════════
+   NEW: Delete Game Button (History)
+   ══════════════════════════════════════════════════════════ */
+.btn-delete-history{
+    display:none;width:100%;margin-top:10px;padding:9px;
+    background:rgba(239,68,68,0.08);color:var(--red);
+    border:1px solid rgba(239,68,68,0.2);border-radius:var(--radius-sm);
+    font-size:.82rem;font-weight:600;cursor:pointer;
+    font-family:inherit;transition:all .2s;
+    -webkit-tap-highlight-color:transparent;
+}
+.btn-delete-history:active{transform:scale(.97);background:rgba(239,68,68,0.15);}
+.history-card.expanded .btn-delete-history{display:block;}
