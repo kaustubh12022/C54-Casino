@@ -1,13 +1,13 @@
 const CACHE_NAME = 'c54-casino-v1';
 const ASSETS_TO_CACHE = [
-    './',
-    './index.html',
-    './style.css',
-    './app.js',
-    './firebase-config.js',
-    './manifest.json',
-    './icons/icon-192.png',
-    './icons/icon-512.png'
+    '/',
+    '/index.html',
+    '/style.css',
+    '/app.js',
+    '/firebase-config.js',
+    '/manifest.json',
+    '/icons/icon-192.png',
+    '/icons/icon-512.png'
 ];
 
 // Install — cache shell assets
@@ -74,7 +74,7 @@ self.addEventListener('fetch', event => {
         }).catch(() => {
             // Offline fallback for navigation
             if (event.request.mode === 'navigate') {
-                return caches.match('./index.html');
+                return caches.match('/index.html');
             }
         })
     );

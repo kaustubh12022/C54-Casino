@@ -714,7 +714,7 @@ function renderTransfers(containerId, transfers) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  LEADERBOARD & HISTORY  (with timeout fix)
+//  LEADERBOARD & HISTORY
 // ══════════════════════════════════════════════════════════
 let lbData = { tp: [], rum: [] };
 
@@ -738,9 +738,9 @@ function setupLeaderboard() {
 async function refreshLeaderboard() {
     showLoading();
     try {
-        // Wrap Firestore queries with a timeout so it doesn't hang forever
+        let timeoutId;
         const timeout = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Leaderboard fetch timeout')), 5000)
+            timeoutId = setTimeout(() => reject(new Error('Leaderboard fetch timeout')), 10000)
         );
 
         const fetchData = async () => {
@@ -754,11 +754,11 @@ async function refreshLeaderboard() {
         };
 
         await Promise.race([fetchData(), timeout]);
+        clearTimeout(timeoutId);
     } catch (e) {
         console.warn('Leaderboard load failed:', e.message || e);
-        toast('⚠️ Could not load data — showing cached');
+        toast('⚠️ ' + (e.message || 'Could not load data — showing cached'));
     } finally {
-        // ALWAYS hide loading, even if it failed
         hideLoading();
     }
 
@@ -876,12 +876,60 @@ function renderHistory(type) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  PWA SERVICE WORKER REGISTRATION
+//  PWA SERVICE WORKER & INSTALL PROMPT
 // ══════════════════════════════════════════════════════════
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
+        navigator.serviceWorker.register('/sw.js')
             .then(reg => console.log('SW registered:', reg.scope))
             .catch(err => console.warn('SW registration failed:', err));
     });
+}
+
+// Custom PWA Install Prompt handling
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    showInstallPromotion();
+});
+
+function showInstallPromotion() {
+    // Only add if not already there
+    if ($('pwa-install-btn')) return;
+    
+    const installBtn = document.createElement('button');
+    installBtn.id = 'pwa-install-btn';
+    installBtn.className = 'btn-outline';
+    installBtn.style.padding = '4px 10px';
+    installBtn.style.fontSize = '0.75rem';
+    installBtn.style.marginLeft = 'auto';
+    installBtn.style.marginRight = '12px';
+    installBtn.style.borderRadius = '20px';
+    installBtn.style.background = 'rgba(99,102,241,0.15)';
+    installBtn.style.borderColor = 'var(--accent)';
+    installBtn.style.color = 'var(--accent2)';
+    installBtn.innerHTML = '📱 Install App';
+    
+    installBtn.addEventListener('click', async () => {
+        installBtn.style.display = 'none';
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`User response to the install prompt: ${outcome}`);
+        deferredPrompt = null;
+    });
+
+    const header = document.querySelector('header');
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.flexWrap = 'wrap';
+    
+    // Add button next to logo
+    const logo = document.querySelector('.logo');
+    logo.style.marginBottom = '0'; // Remove margin to align with button
+    header.insertBefore(installBtn, document.querySelector('.tabs'));
+    
+    // Adjust header layout
+    document.querySelector('.tabs').style.width = '100%';
+    document.querySelector('.tabs').style.marginTop = '12px';
 }
