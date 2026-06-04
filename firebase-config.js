@@ -12,3 +12,11 @@ const firebaseConfig = {
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+
+// Force Firestore to use HTTP long polling instead of WebSockets.
+// Many mobile networks and firewalls block WebSocket connections,
+// causing all Firestore operations to hang forever.
+db.settings({
+    experimentalForceLongPolling: true,
+    merge: true
+});
