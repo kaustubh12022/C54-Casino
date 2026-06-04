@@ -18,5 +18,6 @@ const db = firebase.firestore();
 // causing all Firestore operations to hang forever.
 db.settings({
     experimentalForceLongPolling: true,
+    experimentalAutoDetectLongPolling: false,
     merge: true
 });
