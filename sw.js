@@ -1,4 +1,4 @@
-const CACHE_NAME = 'c54-casino-v7';
+const CACHE_NAME = 'c54-casino-v8';
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',

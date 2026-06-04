@@ -476,7 +476,7 @@ async function saveTpGame() {
             createdAt: Date.now()
         };
 
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('teen_patti_games')
             .insert([{ data: payload }]);
 
@@ -671,7 +671,7 @@ async function saveRumGame() {
             createdAt: Date.now()
         };
 
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('rummy_games')
             .insert([{ data: payload }]);
 
@@ -763,8 +763,8 @@ async function refreshLeaderboard() {
     showLoading();
     try {
         const [tpRes, rumRes] = await Promise.all([
-            supabase.from('teen_patti_games').select('data').order('created_at', { ascending: false }).limit(50),
-            supabase.from('rummy_games').select('data').order('created_at', { ascending: false }).limit(50)
+            supabaseClient.from('teen_patti_games').select('data').order('created_at', { ascending: false }).limit(50),
+            supabaseClient.from('rummy_games').select('data').order('created_at', { ascending: false }).limit(50)
         ]);
 
         if (tpRes.error) throw new Error(tpRes.error.message);
