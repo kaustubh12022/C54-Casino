@@ -472,17 +472,15 @@ async function saveTpGame() {
             tokenPrice: tpGame.tokenPrice,
             players: playersArr,
             settlements: tpGame.transfers,
-            _type: 'tp'
+            _type: 'tp',
+            createdAt: Date.now()
         };
 
-        const res = await fetch('/api/saveTpGame', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        const { error } = await supabase
+            .from('teen_patti_games')
+            .insert([{ data: payload }]);
 
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to save');
+        if (error) throw new Error(error.message);
 
         toast('✅ Teen Patti game saved!');
         resetTpUI();
@@ -669,17 +667,15 @@ async function saveRumGame() {
             players: playersArr,
             rounds: rumGame.rounds,
             settlements: rumGame.transfers,
-            _type: 'rum'
+            _type: 'rum',
+            createdAt: Date.now()
         };
 
-        const res = await fetch('/api/saveRumGame', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        const { error } = await supabase
+            .from('rummy_games')
+            .insert([{ data: payload }]);
 
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to save');
+        if (error) throw new Error(error.message);
 
         toast('✅ Rummy game saved!');
         resetRumUI();
@@ -766,13 +762,16 @@ function setupLeaderboard() {
 async function refreshLeaderboard() {
     showLoading();
     try {
-        const res = await fetch('/api/getLeaderboard');
-        const data = await res.json();
-        
-        if (!res.ok) throw new Error(data.error || 'Failed to fetch');
+        const [tpRes, rumRes] = await Promise.all([
+            supabase.from('teen_patti_games').select('data').order('created_at', { ascending: false }).limit(50),
+            supabase.from('rummy_games').select('data').order('created_at', { ascending: false }).limit(50)
+        ]);
 
-        lbData.tp = data.tpGames || [];
-        lbData.rum = data.rumGames || [];
+        if (tpRes.error) throw new Error(tpRes.error.message);
+        if (rumRes.error) throw new Error(rumRes.error.message);
+
+        lbData.tp = tpRes.data.map(row => row.data);
+        lbData.rum = rumRes.data.map(row => row.data);
         
     } catch (e) {
         console.warn('Leaderboard load failed:', e.message || e);

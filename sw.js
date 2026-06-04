@@ -1,9 +1,10 @@
-const CACHE_NAME = 'c54-casino-v6';
+const CACHE_NAME = 'c54-casino-v7';
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',
     '/style.css',
     '/app.js',
+    '/supabase-config.js',
     '/manifest.json',
     '/icons/icon-192.png',
     '/icons/icon-512.png'
