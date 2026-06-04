@@ -433,37 +433,57 @@ button{cursor:pointer;font-family:inherit;outline:none;border:none;}
 }
 
 /* ══════════════════════════════════════════════════════════
-   NEW: Preset Token Buttons
+   NEW: Preset Token Buttons (Clean UI)
    ══════════════════════════════════════════════════════════ */
-.preset-btn-row{
-    display:flex;gap:6px;margin-top:10px;
+.preset-ui{
+    display:flex;align-items:flex-end;gap:8px;margin-top:12px;
+}
+.preset-group{
+    flex:1;display:flex;flex-direction:column;gap:6px;
+}
+.preset-label{
+    font-size:.65rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;
+    margin-left:4px;opacity:0.8;
+}
+.label-red{color:var(--red);}
+.label-green{color:var(--green);}
+.preset-btns{
+    display:flex;gap:4px;
 }
 .preset-btn{
-    flex:1;padding:10px 2px;border-radius:8px;
-    font-size:.88rem;font-weight:700;
+    flex:1;padding:10px 4px;border-radius:8px;
+    font-size:.85rem;font-weight:700;
     border:1px solid var(--border-glass);
     cursor:pointer;transition:all .2s cubic-bezier(.16,1,.3,1);
     font-family:inherit;text-align:center;
-    background:rgba(0,0,0,0.15);color:var(--text-muted);
+    background:rgba(255,255,255,0.03);color:var(--text-muted);
     -webkit-tap-highlight-color:transparent;
 }
-.preset-btn:active{transform:scale(.88);}
+.preset-btn:active{transform:scale(.92);}
 .preset-btn.buy{
-    background:var(--gold-bg);color:var(--gold);
-    border-color:rgba(245,158,11,0.25);
+    background:rgba(34,197,94,0.08);color:var(--green);
+    border-color:rgba(34,197,94,0.2);
 }
-.preset-btn.buy:hover{background:rgba(245,158,11,0.18);}
+.preset-btn.buy:hover{background:rgba(34,197,94,0.15);}
 .preset-btn.return{
-    background:var(--green-bg);color:var(--green);
-    border-color:rgba(34,197,94,0.25);
+    background:rgba(239,68,68,0.08);color:var(--red);
+    border-color:rgba(239,68,68,0.2);
 }
-.preset-btn.return:hover{background:rgba(34,197,94,0.18);}
+.preset-btn.return:hover{background:rgba(239,68,68,0.15);}
+
+.preset-actions{
+    display:flex;flex-direction:column;gap:4px;flex:0 0 44px;
+}
 .preset-btn.custom{
-    max-width:48px;flex:0 0 48px;
-    background:rgba(255,255,255,0.04);color:var(--text-muted);
-    font-size:1.1rem;letter-spacing:2px;
+    background:rgba(255,255,255,0.05);color:var(--text-muted);
+    font-size:1.1rem;letter-spacing:1px;height:38px;padding:0;
 }
-.preset-btn.custom:hover{background:rgba(255,255,255,0.08);}
+.preset-btn.custom:hover{background:rgba(255,255,255,0.09);}
+.preset-btn.undo{
+    background:rgba(245,158,11,0.08);color:var(--gold);
+    border-color:rgba(245,158,11,0.2);font-size:1rem;height:38px;padding:0;
+}
+.preset-btn.undo:hover{background:rgba(245,158,11,0.15);}
 
 /* Button pop animation */
 .btn-pop{animation:btnPop .3s cubic-bezier(.16,1,.3,1);}
@@ -472,19 +492,6 @@ button{cursor:pointer;font-family:inherit;outline:none;border:none;}
     40%{transform:scale(1.15);}
     100%{transform:scale(1);}
 }
-
-/* ══════════════════════════════════════════════════════════
-   NEW: Undo Button
-   ══════════════════════════════════════════════════════════ */
-.btn-undo{
-    width:100%;margin-top:8px;padding:7px;
-    background:rgba(239,68,68,0.06);color:var(--red);
-    border:1px solid rgba(239,68,68,0.15);border-radius:6px;
-    font-size:.78rem;font-weight:600;cursor:pointer;
-    transition:all .2s;font-family:inherit;
-    -webkit-tap-highlight-color:transparent;
-}
-.btn-undo:active{transform:scale(.96);background:rgba(239,68,68,0.12);}
 
 /* ══════════════════════════════════════════════════════════
    NEW: Edit Round Button

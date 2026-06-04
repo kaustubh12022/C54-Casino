@@ -309,6 +309,7 @@ async function beginTpGame() {
 // ── Render In-Game Tracking with Preset Buttons ──
 function renderTpTracking() {
     const list = $('tp-tracking-list');
+    const isUpdate = list.children.length > 0;
     list.innerHTML = '';
     const names = Object.keys(tpGame.players);
 
@@ -317,8 +318,8 @@ function renderTpTracking() {
         const totalBought = p.initialTokens + p.boughtMore;
         const holdings = totalBought - p.returned;
         const row = document.createElement('div');
-        row.className = 'p-row animate-in';
-        row.style.animationDelay = `${i * 0.05}s`;
+        row.className = isUpdate ? 'p-row' : 'p-row animate-in';
+        if (!isUpdate) row.style.animationDelay = `${i * 0.05}s`;
 
         const paymentBadge = p.isPaid
             ? '<span class="payment-badge paid">💵 Paid</span>'
@@ -338,14 +339,26 @@ function renderTpTracking() {
                     ${p.boughtMore > 0 ? `<span>Bought More: +${p.boughtMore}</span>` : ''}
                     ${p.returned > 0 ? `<span>Returned: −${p.returned}</span>` : ''}
                 </div>
-                <div class="preset-btn-row">
-                    <button class="preset-btn return" data-name="${name}" data-amount="10">−10</button>
-                    <button class="preset-btn return" data-name="${name}" data-amount="5">−5</button>
-                    <button class="preset-btn buy" data-name="${name}" data-amount="5">+5</button>
-                    <button class="preset-btn buy" data-name="${name}" data-amount="10">+10</button>
-                    <button class="preset-btn custom" data-name="${name}" title="Custom amount">⋯</button>
-                </div>
-                ${p.transactions.length > 1 ? `<button class="btn-undo" data-name="${name}">↩ Undo Last</button>` : ''}`;
+                <div class="preset-ui">
+                    <div class="preset-group">
+                        <span class="preset-label label-red">Return</span>
+                        <div class="preset-btns">
+                            <button class="preset-btn return" data-name="${name}" data-amount="10">−10</button>
+                            <button class="preset-btn return" data-name="${name}" data-amount="5">−5</button>
+                        </div>
+                    </div>
+                    <div class="preset-group">
+                        <span class="preset-label label-green">Buy</span>
+                        <div class="preset-btns">
+                            <button class="preset-btn buy" data-name="${name}" data-amount="5">+5</button>
+                            <button class="preset-btn buy" data-name="${name}" data-amount="10">+10</button>
+                        </div>
+                    </div>
+                    <div class="preset-actions">
+                        <button class="preset-btn custom" data-name="${name}" title="Custom amount">⋯</button>
+                        ${p.transactions.length > 1 ? `<button class="preset-btn undo btn-undo" data-name="${name}" title="Undo Last">↩</button>` : ''}
+                    </div>
+                </div>`;
         } else if (tpGame.stage === 'ending') {
             row.innerHTML = `
                 <div class="p-row-top">
@@ -614,7 +627,9 @@ function calculateTpSettlement() {
             ? '<span class="payment-badge paid small">💵 Paid</span>'
             : '<span class="payment-badge credit small">🏷️ Credit</span>';
 
-        resultsHTML += `<div class="result-row ${cls} animate-in">
+        const isUpdate = $('tp-settlement-results').children.length > 0;
+        const clsBase = 'result-row ' + cls;
+        resultsHTML += `<div class="${isUpdate ? clsBase : clsBase + ' animate-in'}">
             <span>${name} ${paymentBadge}
                 <small style="color:var(--text-muted);display:block;font-size:.75rem;">
                     Took ${p.initialTokens}${p.boughtMore > 0 ? '+' + p.boughtMore : ''}${p.returned > 0 ? '−' + p.returned : ''} = ${totalAcq} | Remaining: ${p.remainingTokens}
@@ -761,6 +776,9 @@ async function startRumGame() {
 }
 
 function renderRumScoreboard() {
+    const list = $('rummy-scoreboard');
+    const isUpdate = list.children.length > 0;
+    
     const names = Object.keys(rumGame.players);
     // Sort by total points ascending (lower = better)
     const sorted = names.map(n => ({ name: n, total: rumGame.players[n].total }))
@@ -769,7 +787,8 @@ function renderRumScoreboard() {
     let html = '<table class="scoreboard"><thead><tr><th>#</th><th>Player</th><th>Points</th></tr></thead><tbody>';
     sorted.forEach((p, i) => {
         const cls = i === 0 && rumGame.rounds.length > 0 ? 'rank-1' : '';
-        html += `<tr class="${cls} animate-in" style="animation-delay:${i * 0.05}s"><td>${i + 1}</td><td>${p.name}</td><td>${p.total}</td></tr>`;
+        const anim = isUpdate ? '' : `class="animate-in" style="animation-delay:${i * 0.05}s"`;
+        html += `<tr class="${cls}" ${anim}><td>${i + 1}</td><td>${p.name}</td><td>${p.total}</td></tr>`;
     });
     html += '</tbody></table>';
     $('rummy-scoreboard').innerHTML = html;
@@ -779,7 +798,8 @@ function renderRumScoreboard() {
     if (rumGame.rounds.length > 0) {
         histHTML = '<div class="round-history">';
         rumGame.rounds.forEach((r, i) => {
-            histHTML += `<div class="round-item animate-in" style="animation-delay:${i * 0.03}s">
+            const anim = isUpdate ? '' : `class="round-item animate-in" style="animation-delay:${i * 0.03}s"`;
+            histHTML += `<div ${isUpdate ? 'class="round-item"' : anim}>
                 <span class="round-label">R${i + 1}:</span>`;
             Object.entries(r).forEach(([name, pts]) => {
                 histHTML += `<span>${name}: ${pts}</span>`;
@@ -929,7 +949,9 @@ function calculateRumSettlement() {
         let cls = 'neutral', display = '₹0';
         if (netAmount > 0) { cls = 'winner'; display = '+₹' + netAmount.toFixed(2); }
         else if (netAmount < 0) { cls = 'loser'; display = '−₹' + Math.abs(netAmount).toFixed(2); }
-        resultsHTML += `<div class="result-row ${cls} animate-in">
+        const isUpdate = $('rummy-settlement-results').children.length > 0;
+        const clsBase = 'result-row ' + cls;
+        resultsHTML += `<div class="${isUpdate ? clsBase : clsBase + ' animate-in'}">
             <span>${pName} <small style="color:var(--text-muted)">(${rumGame.players[pName].total} pts)</small></span>
             <span class="r-amount">${display}</span>
         </div>`;
@@ -1200,7 +1222,9 @@ function renderTpSettlementFromData() {
             ? '<span class="payment-badge paid small">💵 Paid</span>'
             : '<span class="payment-badge credit small">🏷️ Credit</span>';
 
-        resultsHTML += `<div class="result-row ${cls} animate-in">
+        const isUpdate = $('tp-settlement-results').children.length > 0;
+        const clsBase = 'result-row ' + cls;
+        resultsHTML += `<div class="${isUpdate ? clsBase : clsBase + ' animate-in'}">
             <span>${name} ${paymentBadge}
                 <small style="color:var(--text-muted);display:block;font-size:.75rem;">
                     Took ${p.initialTokens}${p.boughtMore > 0 ? '+' + p.boughtMore : ''}${p.returned > 0 ? '−' + p.returned : ''} = ${totalAcq} | Remaining: ${p.remainingTokens}
@@ -1245,7 +1269,9 @@ function renderRumSettlementFromData() {
         if (netAmount > 0) { cls = 'winner'; display = '+₹' + netAmount.toFixed(2); }
         else if (netAmount < 0) { cls = 'loser'; display = '−₹' + Math.abs(netAmount).toFixed(2); }
 
-        resultsHTML += `<div class="result-row ${cls} animate-in">
+        const isUpdate = $('rummy-settlement-results').children.length > 0;
+        const clsBase = 'result-row ' + cls;
+        resultsHTML += `<div class="${isUpdate ? clsBase : clsBase + ' animate-in'}">
             <span>${name} <small style="color:var(--text-muted)">(${p.total} pts)</small></span>
             <span class="r-amount">${display}</span>
         </div>`;
