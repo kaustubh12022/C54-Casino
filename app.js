@@ -48,6 +48,7 @@ function setupTabs() {
             btn.classList.add('active');
             $(btn.dataset.target).classList.add('active');
             if (btn.dataset.target === 'view-leaderboard') refreshLeaderboard();
+            if (btn.dataset.target === 'view-settlements') refreshSettlements();
             if (btn.dataset.target === 'view-teenpatti' || btn.dataset.target === 'view-rummy') checkActiveSessions();
         });
     });
@@ -701,6 +702,9 @@ async function saveTpGame() {
         toast('✅ Teen Patti game saved!');
         await endLiveSession();
 
+        // Push transfers to settlement ledger
+        await pushToSettlementLedger(tpGame.transfers, 'Teen Patti');
+
         // Show delete button, hide save button
         $('btn-save-tp').classList.add('hidden');
         $('btn-delete-tp').classList.remove('hidden');
@@ -1004,6 +1008,9 @@ async function saveRumGame() {
         rumGame._savedId = data.id;
         toast('✅ Rummy game saved!');
         await endLiveSession();
+
+        // Push transfers to settlement ledger
+        await pushToSettlementLedger(rumGame.transfers, 'Rummy');
 
         // Show delete button, hide save button
         $('btn-save-rummy').classList.add('hidden');
@@ -1608,6 +1615,274 @@ async function deleteHistoryGame(btn) {
     } catch (e) {
         console.error(e);
         toast('❌ ' + (e.message || 'Delete failed'));
+    } finally {
+        hideLoading();
+    }
+}
+
+// ══════════════════════════════════════════════════════════
+//  SETTLEMENT LEDGER (Splitwise-like)
+// ══════════════════════════════════════════════════════════
+
+async function pushToSettlementLedger(transfers, gameLabel) {
+    if (!transfers || transfers.length === 0) return;
+    try {
+        const rows = transfers.map(t => ({
+            from_player: t.from,
+            to_player: t.to,
+            amount: t.amount,
+            paid_amount: 0,
+            status: 'pending',
+            game_label: gameLabel,
+            created_at: new Date().toISOString()
+        }));
+
+        const { error } = await supabaseClient
+            .from('settlement_ledger')
+            .insert(rows);
+
+        if (error) throw error;
+    } catch (e) {
+        console.warn('Settlement ledger push skipped:', e.message || e);
+    }
+}
+
+let settlementData = [];
+
+async function refreshSettlements() {
+    showLoading();
+    try {
+        const { data, error } = await supabaseClient
+            .from('settlement_ledger')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        settlementData = data || [];
+    } catch (e) {
+        console.warn('Settlement load failed:', e.message || e);
+        settlementData = [];
+    } finally {
+        hideLoading();
+    }
+    renderSettlements();
+}
+
+function renderSettlements() {
+    renderSettleBalances();
+    renderSettlePending();
+    renderSettleHistory();
+}
+
+// ── Net Balance Summary ──
+function renderSettleBalances() {
+    const container = $('settle-balances');
+    const pending = settlementData.filter(t => t.status !== 'settled');
+
+    if (pending.length === 0) {
+        container.innerHTML = '<div class="empty-state">All settled! 🎉 No pending balances.</div>';
+        return;
+    }
+
+    // Compute net balances between each pair
+    const balanceMap = {};
+    pending.forEach(t => {
+        const key = [t.from_player, t.to_player].sort().join('||');
+        if (!balanceMap[key]) balanceMap[key] = { a: [t.from_player, t.to_player].sort()[0], b: [t.from_player, t.to_player].sort()[1], net: 0 };
+        const remaining = t.amount - (t.paid_amount || 0);
+        if (t.from_player === balanceMap[key].a) {
+            balanceMap[key].net -= remaining; // a owes b
+        } else {
+            balanceMap[key].net += remaining; // b owes a
+        }
+    });
+
+    let html = '<table class="settle-table"><thead><tr><th>Person</th><th></th><th>Person</th><th>Amount</th></tr></thead><tbody>';
+    Object.values(balanceMap).forEach((pair, i) => {
+        if (Math.abs(pair.net) < 0.01) return;
+        const owes = pair.net < 0 ? pair.a : pair.b;
+        const gets = pair.net < 0 ? pair.b : pair.a;
+        const amt = Math.abs(pair.net);
+        html += `<tr class="animate-in" style="animation-delay:${i * 0.04}s">
+            <td class="settle-person owes">${owes}</td>
+            <td class="settle-arrow">→ owes →</td>
+            <td class="settle-person gets">${gets}</td>
+            <td class="settle-amount">₹${amt.toFixed(2)}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// ── Pending Transactions ──
+function renderSettlePending() {
+    const container = $('settle-pending');
+    const pending = settlementData.filter(t => t.status !== 'settled');
+
+    if (pending.length === 0) {
+        container.innerHTML = '<div class="empty-state">No pending transactions.</div>';
+        return;
+    }
+
+    let html = '';
+    pending.forEach((t, i) => {
+        const remaining = Math.round((t.amount - (t.paid_amount || 0)) * 100) / 100;
+        const paidPct = t.amount > 0 ? Math.round(((t.paid_amount || 0) / t.amount) * 100) : 0;
+        const date = new Date(t.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+
+        html += `<div class="settle-card animate-in" style="animation-delay:${i * 0.04}s">
+            <div class="settle-card-top">
+                <div class="settle-card-players">
+                    <span class="settle-from">${t.from_player}</span>
+                    <span class="settle-arrow-sm">→</span>
+                    <span class="settle-to">${t.to_player}</span>
+                </div>
+                <span class="settle-badge ${t.status}">${t.status === 'partial' ? '◐ Partial' : '⏳ Pending'}</span>
+            </div>
+            <div class="settle-card-amounts">
+                <div class="settle-card-total">
+                    <span class="settle-label">Total</span>
+                    <span>₹${t.amount.toFixed(2)}</span>
+                </div>
+                ${t.paid_amount > 0 ? `<div class="settle-card-paid">
+                    <span class="settle-label">Paid</span>
+                    <span class="lb-pos">₹${t.paid_amount.toFixed(2)}</span>
+                </div>` : ''}
+                <div class="settle-card-remaining">
+                    <span class="settle-label">Remaining</span>
+                    <span class="lb-neg">₹${remaining.toFixed(2)}</span>
+                </div>
+            </div>
+            ${t.paid_amount > 0 ? `<div class="settle-progress"><div class="settle-progress-bar" style="width:${paidPct}%"></div></div>` : ''}
+            <div class="settle-card-meta">
+                <span class="settle-game-label">${t.game_label || 'Game'}</span>
+                <span class="settle-date">${date}</span>
+            </div>
+            <div class="settle-actions">
+                <button class="btn-settle-partial" onclick="openPartialSettle('${t.id}', ${remaining})">💰 Partial</button>
+                <button class="btn-settle-full" onclick="settleFullTransaction('${t.id}', ${remaining})">✅ Full Settle</button>
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+// ── Settled History ──
+function renderSettleHistory() {
+    const container = $('settle-history');
+    const settled = settlementData.filter(t => t.status === 'settled');
+
+    if (settled.length === 0) {
+        container.innerHTML = '<div class="empty-state">No settled transactions yet.</div>';
+        return;
+    }
+
+    let html = '<table class="settle-table settled"><thead><tr><th>From</th><th></th><th>To</th><th>Amount</th><th>Game</th></tr></thead><tbody>';
+    settled.forEach((t, i) => {
+        html += `<tr class="animate-in" style="animation-delay:${i * 0.03}s">
+            <td>${t.from_player}</td>
+            <td class="settle-arrow-sm">→</td>
+            <td>${t.to_player}</td>
+            <td>₹${t.amount.toFixed(2)}</td>
+            <td class="settle-game-label">${t.game_label || ''}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// ── Partial Settle Up ──
+function openPartialSettle(txId, maxAmount) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'partial-settle-overlay';
+    overlay.innerHTML = `
+        <div class="modal glass-card" style="animation:modalPop .25s cubic-bezier(.16,1,.3,1)">
+            <h3>💰 Partial Settle Up</h3>
+            <p class="card-subtitle">Remaining: ₹${maxAmount.toFixed(2)}</p>
+            <input type="number" id="partial-settle-input" min="0.01" max="${maxAmount}" step="0.01" value="${maxAmount.toFixed(2)}" style="width:100%;padding:12px;border-radius:8px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.04);color:var(--text);font-size:1rem;font-family:inherit;margin:10px 0;">
+            <div class="modal-actions">
+                <button class="btn-outline" onclick="document.getElementById('partial-settle-overlay').remove()">Cancel</button>
+                <button class="btn-primary" onclick="doPartialSettle('${txId}', ${maxAmount})">Settle</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    setTimeout(() => {
+        const inp = $('partial-settle-input');
+        if (inp) { inp.select(); inp.focus(); }
+    }, 100);
+}
+
+async function doPartialSettle(txId, maxAmount) {
+    const inp = $('partial-settle-input');
+    const amount = parseFloat(inp.value);
+    if (isNaN(amount) || amount <= 0) { toast('❌ Enter a valid amount'); return; }
+    if (amount > maxAmount + 0.01) { toast('❌ Cannot exceed remaining ₹' + maxAmount.toFixed(2)); return; }
+
+    const overlay = $('partial-settle-overlay');
+    if (overlay) overlay.remove();
+
+    showLoading();
+    try {
+        // Get current record
+        const { data: current, error: fetchError } = await supabaseClient
+            .from('settlement_ledger')
+            .select('*')
+            .eq('id', txId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        const newPaid = Math.round(((current.paid_amount || 0) + amount) * 100) / 100;
+        const isFullySettled = newPaid >= current.amount - 0.01;
+
+        const { error } = await supabaseClient
+            .from('settlement_ledger')
+            .update({
+                paid_amount: isFullySettled ? current.amount : newPaid,
+                status: isFullySettled ? 'settled' : 'partial'
+            })
+            .eq('id', txId);
+
+        if (error) throw error;
+        toast(isFullySettled ? '✅ Fully settled!' : '💰 ₹' + amount.toFixed(2) + ' settled');
+        await refreshSettlements();
+    } catch (e) {
+        console.error(e);
+        toast('❌ ' + (e.message || 'Settle failed'));
+    } finally {
+        hideLoading();
+    }
+}
+
+async function settleFullTransaction(txId, remaining) {
+    if (!confirm('✅ Mark as fully settled (₹' + remaining.toFixed(2) + ')?')) return;
+
+    showLoading();
+    try {
+        const { data: current, error: fetchError } = await supabaseClient
+            .from('settlement_ledger')
+            .select('amount')
+            .eq('id', txId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        const { error } = await supabaseClient
+            .from('settlement_ledger')
+            .update({
+                paid_amount: current.amount,
+                status: 'settled'
+            })
+            .eq('id', txId);
+
+        if (error) throw error;
+        toast('✅ Fully settled!');
+        await refreshSettlements();
+    } catch (e) {
+        console.error(e);
+        toast('❌ ' + (e.message || 'Settle failed'));
     } finally {
         hideLoading();
     }
