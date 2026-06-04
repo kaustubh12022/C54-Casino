@@ -34,6 +34,9 @@
                 <button class="tab-btn" data-target="view-leaderboard">
                     <span class="tab-icon">🏆</span><span class="tab-label">Leaderboard</span>
                 </button>
+                <button class="tab-btn" data-target="view-settlements">
+                    <span class="tab-icon">💸</span><span class="tab-label">Settle Up</span>
+                </button>
             </nav>
         </header>
 
@@ -166,6 +169,28 @@
                     <div id="history-content">
                         <div class="empty-state" id="history-empty">No games saved yet.</div>
                     </div>
+                </div>
+            </section>
+
+            <!-- ========== SETTLEMENTS VIEW ========== -->
+            <section id="view-settlements" class="view">
+                <!-- Balance Summary -->
+                <div class="glass-card">
+                    <h2>💸 Settle Up</h2>
+                    <p class="card-subtitle">Track who owes whom across all games. Settle partially or fully.</p>
+                    <div id="settle-balances"></div>
+                </div>
+                <!-- Pending Transactions -->
+                <div class="glass-card" style="margin-top:16px;">
+                    <h2>⏳ Pending Transactions</h2>
+                    <div id="settle-pending"></div>
+                </div>
+                <!-- Settled History -->
+                <div class="glass-card" style="margin-top:16px;">
+                    <div class="settle-history-header">
+                        <h2>✅ Settled</h2>
+                    </div>
+                    <div id="settle-history"></div>
                 </div>
             </section>
         </main>

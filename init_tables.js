@@ -48,14 +48,29 @@ async function run() {
       );
     `);
 
+    // Settlement ledger table (Splitwise-like)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS settlement_ledger (
+        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+        from_player text NOT NULL,
+        to_player text NOT NULL,
+        amount numeric NOT NULL,
+        paid_amount numeric NOT NULL DEFAULT 0,
+        status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'partial', 'settled')),
+        game_label text,
+        created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL
+      );
+    `);
+
     // Enable RLS on all tables
     await client.query(`ALTER TABLE teen_patti_games ENABLE ROW LEVEL SECURITY;`);
     await client.query(`ALTER TABLE rummy_games ENABLE ROW LEVEL SECURITY;`);
     await client.query(`ALTER TABLE players ENABLE ROW LEVEL SECURITY;`);
     await client.query(`ALTER TABLE live_sessions ENABLE ROW LEVEL SECURITY;`);
+    await client.query(`ALTER TABLE settlement_ledger ENABLE ROW LEVEL SECURITY;`);
 
     // RLS Policies — allow anon access for this app
-    const tables = ['teen_patti_games', 'rummy_games', 'players', 'live_sessions'];
+    const tables = ['teen_patti_games', 'rummy_games', 'players', 'live_sessions', 'settlement_ledger'];
     for (const table of tables) {
       await client.query(`
         DO $$ BEGIN
@@ -74,6 +89,15 @@ async function run() {
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'live_sessions' AND policyname = 'Allow anon update live_sessions') THEN
           CREATE POLICY "Allow anon update live_sessions" ON live_sessions FOR UPDATE USING (true) WITH CHECK (true);
+        END IF;
+      END $$;
+    `);
+
+    // settlement_ledger needs UPDATE policy for settle-up actions
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'settlement_ledger' AND policyname = 'Allow anon update settlement_ledger') THEN
+          CREATE POLICY "Allow anon update settlement_ledger" ON settlement_ledger FOR UPDATE USING (true) WITH CHECK (true);
         END IF;
       END $$;
     `);
