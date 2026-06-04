@@ -467,17 +467,29 @@ async function saveTpGame() {
             netAmount: p.netAmount,
             transactions: p.transactions
         }));
-        await db.collection('teenPattiGames').add({
+
+        let timeoutId;
+        const timeout = new Promise((_, reject) =>
+            timeoutId = setTimeout(() => reject(new Error('Save timed out — check your internet')), 15000)
+        );
+        const saveOp = db.collection('teenPattiGames').add({
             date: firebase.firestore.FieldValue.serverTimestamp(),
             tokenPrice: tpGame.tokenPrice,
             players: playersArr,
             settlements: tpGame.transfers,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
+
+        await Promise.race([saveOp, timeout]);
+        clearTimeout(timeoutId);
         toast('✅ Teen Patti game saved!');
         resetTpUI();
-    } catch (e) { console.error(e); toast('❌ Save failed'); }
-    hideLoading();
+    } catch (e) {
+        console.error(e);
+        toast('❌ ' + (e.message || 'Save failed'));
+    } finally {
+        hideLoading();
+    }
 }
 
 function resetTpUI() {
@@ -649,7 +661,12 @@ async function saveRumGame() {
         const playersArr = Object.entries(rumGame.players).map(([name, p]) => ({
             name, rounds: p.rounds, totalPoints: p.total, netBalance: p.netBalance
         }));
-        await db.collection('rummyGames').add({
+
+        let timeoutId;
+        const timeout = new Promise((_, reject) =>
+            timeoutId = setTimeout(() => reject(new Error('Save timed out — check your internet')), 15000)
+        );
+        const saveOp = db.collection('rummyGames').add({
             date: firebase.firestore.FieldValue.serverTimestamp(),
             pointValue: RUMMY_POINT_VALUE,
             players: playersArr,
@@ -657,10 +674,17 @@ async function saveRumGame() {
             settlements: rumGame.transfers,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
+
+        await Promise.race([saveOp, timeout]);
+        clearTimeout(timeoutId);
         toast('✅ Rummy game saved!');
         resetRumUI();
-    } catch (e) { console.error(e); toast('❌ Save failed'); }
-    hideLoading();
+    } catch (e) {
+        console.error(e);
+        toast('❌ ' + (e.message || 'Save failed'));
+    } finally {
+        hideLoading();
+    }
 }
 
 function resetRumUI() {
@@ -881,7 +905,11 @@ function renderHistory(type) {
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('SW registered:', reg.scope))
+            .then(reg => {
+                console.log('SW registered:', reg.scope);
+                // Force check for new service worker on every page load
+                reg.update();
+            })
             .catch(err => console.warn('SW registration failed:', err));
     });
 }

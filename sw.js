@@ -1,4 +1,4 @@
-const CACHE_NAME = 'c54-casino-v1';
+const CACHE_NAME = 'c54-casino-v3';
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',
@@ -32,7 +32,7 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
-// Fetch — network-first for Firebase, cache-first for static assets
+// Fetch — NETWORK-FIRST for everything (guarantees fresh code)
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
 
@@ -40,42 +40,28 @@ self.addEventListener('fetch', event => {
     if (url.hostname.includes('googleapis.com') ||
         url.hostname.includes('gstatic.com') ||
         url.hostname.includes('firebaseio.com') ||
-        url.hostname.includes('firestore.googleapis.com') ||
         url.hostname.includes('google.com')) {
         return; // Let browser handle normally
     }
 
-    // For Google Fonts — cache-first
-    if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
-        event.respondWith(
-            caches.match(event.request).then(cached => {
-                return cached || fetch(event.request).then(response => {
-                    return caches.open(CACHE_NAME).then(cache => {
-                        cache.put(event.request, response.clone());
-                        return response;
-                    });
-                });
-            })
-        );
-        return;
-    }
-
-    // For app shell — cache-first, fallback to network
+    // For everything else — NETWORK first, fall back to cache
     event.respondWith(
-        caches.match(event.request).then(cached => {
-            return cached || fetch(event.request).then(response => {
-                // Cache new successful responses
-                if (response.status === 200) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-                }
-                return response;
-            });
-        }).catch(() => {
-            // Offline fallback for navigation
-            if (event.request.mode === 'navigate') {
-                return caches.match('/index.html');
+        fetch(event.request).then(response => {
+            // Cache successful responses for offline use
+            if (response.status === 200) {
+                const clone = response.clone();
+                caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
             }
+            return response;
+        }).catch(() => {
+            // Network failed — try cache (offline mode)
+            return caches.match(event.request).then(cached => {
+                if (cached) return cached;
+                // Offline fallback for navigation
+                if (event.request.mode === 'navigate') {
+                    return caches.match('/index.html');
+                }
+            });
         })
     );
 });
