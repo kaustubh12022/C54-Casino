@@ -217,6 +217,7 @@ function setupTeenPatti() {
     $('btn-begin-tp').addEventListener('click', beginTpGame);
     $('btn-end-tp').addEventListener('click', endTpGame);
     $('btn-save-tp').addEventListener('click', saveTpGame);
+    $('btn-delete-tp').addEventListener('click', deleteSavedTpGame);
     $('btn-newgame-tp').addEventListener('click', resetTpUI);
 }
 
@@ -673,18 +674,48 @@ async function saveTpGame() {
             createdAt: Date.now()
         };
 
-        const { error } = await supabaseClient
+        const { data, error } = await supabaseClient
             .from('teen_patti_games')
-            .insert([{ data: payload }]);
+            .insert([{ data: payload }])
+            .select('id')
+            .single();
 
         if (error) throw new Error(error.message);
 
+        tpGame._savedId = data.id;
         toast('✅ Teen Patti game saved!');
         await endLiveSession();
-        resetTpUI();
+
+        // Show delete button, hide save button
+        $('btn-save-tp').classList.add('hidden');
+        $('btn-delete-tp').classList.remove('hidden');
     } catch (e) {
         console.error(e);
         toast('❌ ' + (e.message || 'Save failed'));
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deleteSavedTpGame() {
+    const id = tpGame && tpGame._savedId;
+    if (!id) { toast('❌ No saved game to delete'); return; }
+
+    if (!confirm('🗑️ Delete this game? It will be removed from leaderboard & history permanently.')) return;
+
+    showLoading();
+    try {
+        const { error } = await supabaseClient
+            .from('teen_patti_games')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw new Error(error.message);
+        toast('🗑️ Game deleted');
+        resetTpUI();
+    } catch (e) {
+        console.error(e);
+        toast('❌ ' + (e.message || 'Delete failed'));
     } finally {
         hideLoading();
     }
@@ -696,6 +727,8 @@ function resetTpUI() {
     $('tp-initial-card').classList.add('hidden');
     $('tp-setup-card').classList.remove('hidden');
     $('btn-end-tp').textContent = 'End Game & Settle';
+    $('btn-save-tp').classList.remove('hidden');
+    $('btn-delete-tp').classList.add('hidden');
     tpGame = null;
     isLiveGuest = false;
 }
@@ -710,6 +743,7 @@ function setupRummy() {
     $('btn-add-round').addEventListener('click', () => openRoundInputModal());
     $('btn-end-rummy').addEventListener('click', endRumGame);
     $('btn-save-rummy').addEventListener('click', saveRumGame);
+    $('btn-delete-rummy').addEventListener('click', deleteSavedRumGame);
     $('btn-newgame-rummy').addEventListener('click', resetRumUI);
 }
 
@@ -937,18 +971,48 @@ async function saveRumGame() {
             createdAt: Date.now()
         };
 
-        const { error } = await supabaseClient
+        const { data, error } = await supabaseClient
             .from('rummy_games')
-            .insert([{ data: payload }]);
+            .insert([{ data: payload }])
+            .select('id')
+            .single();
 
         if (error) throw new Error(error.message);
 
+        rumGame._savedId = data.id;
         toast('✅ Rummy game saved!');
         await endLiveSession();
-        resetRumUI();
+
+        // Show delete button, hide save button
+        $('btn-save-rummy').classList.add('hidden');
+        $('btn-delete-rummy').classList.remove('hidden');
     } catch (e) {
         console.error(e);
         toast('❌ ' + (e.message || 'Save failed'));
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deleteSavedRumGame() {
+    const id = rumGame && rumGame._savedId;
+    if (!id) { toast('❌ No saved game to delete'); return; }
+
+    if (!confirm('🗑️ Delete this game? It will be removed from leaderboard & history permanently.')) return;
+
+    showLoading();
+    try {
+        const { error } = await supabaseClient
+            .from('rummy_games')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw new Error(error.message);
+        toast('🗑️ Game deleted');
+        resetRumUI();
+    } catch (e) {
+        console.error(e);
+        toast('❌ ' + (e.message || 'Delete failed'));
     } finally {
         hideLoading();
     }
@@ -958,6 +1022,8 @@ function resetRumUI() {
     $('rummy-settlement-card').classList.add('hidden');
     $('rummy-ingame-card').classList.add('hidden');
     $('rummy-setup-card').classList.remove('hidden');
+    $('btn-save-rummy').classList.remove('hidden');
+    $('btn-delete-rummy').classList.add('hidden');
     rumGame = null;
     isLiveGuest = false;
 }
@@ -1366,15 +1432,15 @@ async function refreshLeaderboard() {
     showLoading();
     try {
         const [tpRes, rumRes] = await Promise.all([
-            supabaseClient.from('teen_patti_games').select('data').order('created_at', { ascending: false }).limit(50),
-            supabaseClient.from('rummy_games').select('data').order('created_at', { ascending: false }).limit(50)
+            supabaseClient.from('teen_patti_games').select('id,data').order('created_at', { ascending: false }).limit(50),
+            supabaseClient.from('rummy_games').select('id,data').order('created_at', { ascending: false }).limit(50)
         ]);
 
         if (tpRes.error) throw new Error(tpRes.error.message);
         if (rumRes.error) throw new Error(rumRes.error.message);
 
-        lbData.tp = tpRes.data.map(row => row.data);
-        lbData.rum = rumRes.data.map(row => row.data);
+        lbData.tp = tpRes.data.map(row => ({ ...row.data, _rowId: row.id }));
+        lbData.rum = rumRes.data.map(row => ({ ...row.data, _rowId: row.id }));
 
     } catch (e) {
         console.warn('Leaderboard load failed:', e.message || e);
@@ -1490,9 +1556,35 @@ function renderHistory(type) {
             </div>
             <div class="history-players">${playerNames}</div>
             <div class="history-detail">${detailHTML}</div>
+            ${g._rowId ? `<button class="btn-delete-history" data-id="${g._rowId}" data-table="${g._type === 'tp' ? 'teen_patti_games' : 'rummy_games'}" onclick="event.stopPropagation(); deleteHistoryGame(this)">🗑️ Delete Game</button>` : ''}
         </div>`;
     });
     $('history-content').innerHTML = html;
+}
+
+async function deleteHistoryGame(btn) {
+    const id = btn.dataset.id;
+    const table = btn.dataset.table;
+    if (!id || !table) return;
+
+    if (!confirm('🗑️ Delete this game? It will be removed from leaderboard & history permanently.')) return;
+
+    showLoading();
+    try {
+        const { error } = await supabaseClient
+            .from(table)
+            .delete()
+            .eq('id', id);
+
+        if (error) throw new Error(error.message);
+        toast('🗑️ Game deleted');
+        await refreshLeaderboard();
+    } catch (e) {
+        console.error(e);
+        toast('❌ ' + (e.message || 'Delete failed'));
+    } finally {
+        hideLoading();
+    }
 }
 
 // ══════════════════════════════════════════════════════════
