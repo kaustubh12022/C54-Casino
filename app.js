@@ -1621,7 +1621,7 @@ async function deleteHistoryGame(btn) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  SETTLEMENT — Splitwise-style Net Aggregation
+//  SETTLEMENT — Player-Centric Aggregation
 // ══════════════════════════════════════════════════════════
 
 async function pushToSettlementLedger(transfers, gameLabel) {
@@ -1650,196 +1650,208 @@ async function pushToSettlementLedger(transfers, gameLabel) {
 async function refreshSettlements() {
     showLoading();
     try {
-        // Fetch all game data and settled ledger entries in parallel
-        const [tpRes, rumRes, settledRes] = await Promise.all([
+        // Fetch all game data (same source as leaderboard)
+        const [tpRes, rumRes] = await Promise.all([
             supabaseClient.from('teen_patti_games').select('id,data').limit(500),
-            supabaseClient.from('rummy_games').select('id,data').limit(500),
-            supabaseClient.from('settlement_ledger').select('*').eq('status', 'settled')
+            supabaseClient.from('rummy_games').select('id,data').limit(500)
         ]);
 
         if (tpRes.error) throw new Error(tpRes.error.message);
         if (rumRes.error) throw new Error(rumRes.error.message);
-        if (settledRes.error) throw new Error(settledRes.error.message);
 
-        const tpGames = (tpRes.data || []).map(r => r.data);
-        const rumGames = (rumRes.data || []).map(r => r.data);
-        const settledEntries = settledRes.data || [];
+        const allGames = [
+            ...(tpRes.data || []).map(r => r.data),
+            ...(rumRes.data || []).map(r => r.data)
+        ].filter(Boolean);
 
-        // Step 1: Accumulate net balance per player across ALL games
-        const playerBalances = {};
+        // Step 1: Compute per-player net balance from game data (matches leaderboard)
+        const playerNet = {};
 
-        function addBalance(name, amount) {
-            if (!name || Math.abs(amount) < 0.001) return;
-            if (!playerBalances[name]) playerBalances[name] = 0;
-            playerBalances[name] = Math.round((playerBalances[name] + amount) * 100) / 100;
-        }
-
-        // Teen Patti games
-        tpGames.forEach(game => {
+        allGames.forEach(game => {
             if (!game || !game.players) return;
-            (Array.isArray(game.players) ? game.players : Object.entries(game.players).map(([name, p]) => ({ name, ...p }))).forEach(p => {
-                const amt = p.netAmount || 0;
-                addBalance(p.name, amt);
+            const players = Array.isArray(game.players)
+                ? game.players
+                : Object.entries(game.players).map(([name, p]) => ({ name, ...p }));
+
+            players.forEach(p => {
+                if (!p.name) return;
+                const amt = p.netAmount ?? p.netBalance ?? 0;
+                if (!playerNet[p.name]) playerNet[p.name] = 0;
+                playerNet[p.name] = Math.round((playerNet[p.name] + amt) * 100) / 100;
             });
         });
 
-        // Rummy games
-        rumGames.forEach(game => {
-            if (!game || !game.players) return;
-            (Array.isArray(game.players) ? game.players : Object.entries(game.players).map(([name, p]) => ({ name, ...p }))).forEach(p => {
-                const amt = p.netBalance || 0;
-                addBalance(p.name, amt);
-            });
-        });
-
-        // Step 2: Subtract settled amounts
-        // When a ledger entry is "settled", it means from_player has paid to_player.
-        // from_player's debt is reduced (balance goes up), to_player's credit is reduced (balance goes down)
-        settledEntries.forEach(entry => {
-            const settledAmount = entry.paid_amount || entry.amount || 0;
-            if (settledAmount > 0) {
-                addBalance(entry.from_player, settledAmount);   // debtor paid → balance increases
-                addBalance(entry.to_player, -settledAmount);    // creditor received → balance decreases
-            }
-        });
-
-        // Step 3: Build balances array and run minimum transactions
-        const balances = Object.entries(playerBalances)
+        // Step 2: Build balances and handle mismatch (sum must be 0 for algorithm)
+        const balances = Object.entries(playerNet)
             .filter(([_, bal]) => Math.abs(bal) > 0.005)
             .map(([player, balance]) => ({ player, balance: Math.round(balance * 100) / 100 }));
 
-        const transfers = minimumTransactions(balances);
+        const rawSum = Math.round(balances.reduce((s, b) => s + b.balance, 0) * 100) / 100;
+        let mismatchAmount = 0;
 
-        // Render
-        renderSettleSummary(transfers, playerBalances);
-
-    } catch (e) {
-        console.warn('Settlement load failed:', e.message || e);
-        const container = $('settle-summary');
-        if (container) {
-            container.innerHTML = '<div class="empty-state">⚠️ Could not load settlement data</div>';
-        }
-    } finally {
-        hideLoading();
-    }
-}
-
-function renderSettleSummary(transfers, playerBalances) {
-    const summaryContainer = $('settle-summary');
-    const totalsContainer = $('settle-totals');
-    const totalsCard = $('settle-totals-card');
-
-    // ── Settlement Summary (arrows) ──
-    if (transfers.length === 0) {
-        summaryContainer.innerHTML = `
-            <div class="settle-all-clear">
-                <span class="settle-clear-icon">🎉</span>
-                <div class="settle-clear-text">All Settled!</div>
-                <div class="settle-clear-sub">No pending payments between players</div>
-            </div>`;
-        if (totalsCard) totalsCard.classList.add('hidden');
-        return;
-    }
-
-    if (totalsCard) totalsCard.classList.remove('hidden');
-
-    let html = '';
-    transfers.forEach((t, i) => {
-        html += `<div class="settle-transfer-row" style="animation-delay:${i * 0.06}s">
-            <span class="settle-transfer-from">${t.from}</span>
-            <span class="settle-transfer-arrow">→</span>
-            <span class="settle-transfer-to">${t.to}</span>
-            <span class="settle-transfer-amount">₹${t.amount.toFixed(2)}</span>
-        </div>`;
-    });
-
-    html += `<button class="btn-settle-all" onclick="settleAllTransactions()">✅ Mark All Settled</button>`;
-    summaryContainer.innerHTML = html;
-
-    // ── Totals (collapsible) ──
-    const receivable = Object.entries(playerBalances)
-        .filter(([_, b]) => b > 0.005)
-        .sort((a, b) => b[1] - a[1]);
-    const payable = Object.entries(playerBalances)
-        .filter(([_, b]) => b < -0.005)
-        .sort((a, b) => a[1] - b[1]);
-
-    let totalsHTML = '<div class="settle-totals-grid">';
-
-    // Receivable column
-    totalsHTML += '<div class="settle-total-section receivable"><h4>💰 Receivable</h4>';
-    if (receivable.length === 0) {
-        totalsHTML += '<div class="settle-total-item"><span class="settle-total-name">—</span></div>';
-    } else {
-        receivable.forEach(([name, amt]) => {
-            totalsHTML += `<div class="settle-total-item">
-                <span class="settle-total-name">${name}</span>
-                <span class="settle-total-amount positive">+₹${amt.toFixed(2)}</span>
-            </div>`;
-        });
-    }
-    totalsHTML += '</div>';
-
-    // Payable column
-    totalsHTML += '<div class="settle-total-section payable"><h4>💸 Payable</h4>';
-    if (payable.length === 0) {
-        totalsHTML += '<div class="settle-total-item"><span class="settle-total-name">—</span></div>';
-    } else {
-        payable.forEach(([name, amt]) => {
-            totalsHTML += `<div class="settle-total-item">
-                <span class="settle-total-name">${name}</span>
-                <span class="settle-total-amount negative">−₹${Math.abs(amt).toFixed(2)}</span>
-            </div>`;
-        });
-    }
-    totalsHTML += '</div></div>';
-
-    totalsContainer.innerHTML = totalsHTML;
-
-    // Setup collapsible toggle
-    const toggleBtn = $('settle-totals-toggle');
-    const expandIcon = toggleBtn.querySelector('.settle-expand-icon');
-    toggleBtn.onclick = () => {
-        totalsContainer.classList.toggle('expanded');
-        expandIcon.classList.toggle('rotated');
-    };
-}
-
-async function settleAllTransactions() {
-    if (!confirm('✅ Mark all pending transactions as settled? This cannot be undone.')) return;
-
-    showLoading();
-    try {
-        // Mark all pending/partial ledger entries as settled
-        const { error } = await supabaseClient
-            .from('settlement_ledger')
-            .update({ status: 'settled', paid_amount: supabaseClient.rpc ? undefined : 0 })
-            .in('status', ['pending', 'partial']);
-
-        // Use a more compatible approach: fetch then update each
-        const { data: pending, error: fetchErr } = await supabaseClient
-            .from('settlement_ledger')
-            .select('id, amount')
-            .in('status', ['pending', 'partial']);
-
-        if (fetchErr) throw fetchErr;
-
-        if (pending && pending.length > 0) {
-            for (const entry of pending) {
-                await supabaseClient
-                    .from('settlement_ledger')
-                    .update({ status: 'settled', paid_amount: entry.amount })
-                    .eq('id', entry.id);
+        if (Math.abs(rawSum) > 0.01) {
+            mismatchAmount = Math.abs(rawSum);
+            // Distribute mismatch across winners proportionally (losers stay exact)
+            if (rawSum < 0) {
+                // More debt than credit → increase winners to absorb
+                const winners = balances.filter(b => b.balance > 0.001);
+                const totalCredit = winners.reduce((s, b) => s + b.balance, 0);
+                if (totalCredit > 0) {
+                    const absSum = Math.abs(rawSum);
+                    let distributed = 0;
+                    winners.forEach((b, i) => {
+                        if (i === winners.length - 1) {
+                            // Last winner gets the remainder to avoid rounding drift
+                            b.balance = Math.round((b.balance + (absSum - distributed)) * 100) / 100;
+                        } else {
+                            const share = Math.round((b.balance / totalCredit) * absSum * 100) / 100;
+                            b.balance = Math.round((b.balance + share) * 100) / 100;
+                            distributed += share;
+                        }
+                    });
+                }
+            } else {
+                // More credit than debt → increase losers to absorb
+                const losers = balances.filter(b => b.balance < -0.001);
+                const totalDebt = losers.reduce((s, b) => s + Math.abs(b.balance), 0);
+                if (totalDebt > 0) {
+                    let distributed = 0;
+                    losers.forEach((b, i) => {
+                        if (i === losers.length - 1) {
+                            b.balance = Math.round((b.balance - (rawSum - distributed)) * 100) / 100;
+                        } else {
+                            const share = Math.round((Math.abs(b.balance) / totalDebt) * rawSum * 100) / 100;
+                            b.balance = Math.round((b.balance - share) * 100) / 100;
+                            distributed += share;
+                        }
+                    });
+                }
             }
         }
 
-        toast('✅ All transactions settled!');
-        await refreshSettlements();
+        // Step 3: Run minimum transactions on balanced amounts
+        const transfers = minimumTransactions(balances);
+
+        // Step 4: Build per-player transfer map
+        const playerTransfers = {};
+        Object.keys(playerNet).forEach(name => { playerTransfers[name] = []; });
+
+        transfers.forEach(t => {
+            if (!playerTransfers[t.from]) playerTransfers[t.from] = [];
+            if (!playerTransfers[t.to]) playerTransfers[t.to] = [];
+            playerTransfers[t.from].push({ type: 'pays', player: t.to, amount: t.amount });
+            playerTransfers[t.to].push({ type: 'receives', player: t.from, amount: t.amount });
+        });
+
+        // Render
+        renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmount);
+
     } catch (e) {
-        console.error(e);
-        toast('❌ ' + (e.message || 'Settle failed'));
+        console.warn('Settlement load failed:', e.message || e);
+        const el = $('settle-players');
+        if (el) el.innerHTML = '<div class="empty-state">⚠️ Could not load settlement data</div>';
     } finally {
         hideLoading();
+    }
+}
+
+function renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmount) {
+    const playersContainer = $('settle-players');
+    const quickContainer = $('settle-quick');
+    const quickCard = $('settle-quick-card');
+    const mismatchNote = $('settle-mismatch-note');
+
+    // Check if all settled
+    const hasActivity = Object.values(playerNet).some(v => Math.abs(v) > 0.005);
+
+    if (!hasActivity) {
+        playersContainer.innerHTML = `
+            <div class="settle-all-clear">
+                <span class="settle-clear-icon">🎉</span>
+                <div class="settle-clear-text">All Settled!</div>
+                <div class="settle-clear-sub">No games recorded yet</div>
+            </div>`;
+        if (quickCard) quickCard.classList.add('hidden');
+        if (mismatchNote) mismatchNote.innerHTML = '';
+        return;
+    }
+
+    // Sort players: winners first (descending), then losers (ascending), then zero
+    const sorted = Object.entries(playerNet).sort((a, b) => b[1] - a[1]);
+
+    // Render player cards
+    let cardsHTML = '';
+    sorted.forEach(([name, net], i) => {
+        const cls = net > 0.005 ? 'winner' : net < -0.005 ? 'loser' : 'neutral';
+        const amtCls = net > 0.005 ? 'positive' : net < -0.005 ? 'negative' : 'zero';
+        const display = net > 0.005 ? '+₹' + net.toFixed(2)
+            : net < -0.005 ? '−₹' + Math.abs(net).toFixed(2)
+            : '₹0';
+
+        const details = playerTransfers[name] || [];
+
+        let detailHTML = '';
+        if (details.length > 0) {
+            details.sort((a, b) => b.amount - a.amount);
+            details.forEach(d => {
+                const dirLabel = d.type === 'pays' ? 'PAY' : 'GET';
+                const dirCls = d.type;
+                detailHTML += `<div class="settle-detail-row">
+                    <div class="settle-detail-label">
+                        <span class="settle-detail-dir ${dirCls}">${dirLabel}</span>
+                        <span>${d.player}</span>
+                    </div>
+                    <span class="settle-detail-amount ${dirCls}">₹${d.amount.toFixed(2)}</span>
+                </div>`;
+            });
+        } else {
+            detailHTML = '<div class="settle-detail-empty">No pending transfers</div>';
+        }
+
+        cardsHTML += `<div class="settle-player ${cls} animate-in" style="animation-delay:${i * 0.05}s" onclick="this.classList.toggle('expanded')">
+            <div class="settle-player-header">
+                <div class="settle-player-left">
+                    <span class="settle-player-name">${name}</span>
+                </div>
+                <div class="settle-player-right">
+                    <span class="settle-player-amount ${amtCls}">${display}</span>
+                    <span class="settle-player-chevron">▾</span>
+                </div>
+            </div>
+            <div class="settle-player-detail">
+                <div class="settle-player-detail-inner">
+                    ${detailHTML}
+                </div>
+            </div>
+        </div>`;
+    });
+
+    playersContainer.innerHTML = cardsHTML;
+
+    // Render quick summary (minimum transfers)
+    if (transfers.length > 0 && quickCard) {
+        quickCard.classList.remove('hidden');
+        let quickHTML = '';
+        transfers.forEach((t, i) => {
+            quickHTML += `<div class="settle-transfer-row" style="animation-delay:${i * 0.06}s">
+                <span class="settle-transfer-from">${t.from}</span>
+                <span class="settle-transfer-arrow">→</span>
+                <span class="settle-transfer-to">${t.to}</span>
+                <span class="settle-transfer-amount">₹${t.amount.toFixed(2)}</span>
+            </div>`;
+        });
+        quickContainer.innerHTML = quickHTML;
+    } else if (quickCard) {
+        quickCard.classList.add('hidden');
+    }
+
+    // Render mismatch note
+    if (mismatchNote) {
+        if (mismatchAmount > 0.01) {
+            mismatchNote.innerHTML = `⚠️ ₹${mismatchAmount.toFixed(2)} adjusted across games for token counting discrepancies`;
+        } else {
+            mismatchNote.innerHTML = '';
+        }
     }
 }
 
