@@ -174,23 +174,17 @@
 
             <!-- ========== SETTLEMENTS VIEW ========== -->
             <section id="view-settlements" class="view">
-                <!-- Balance Summary -->
                 <div class="glass-card">
                     <h2>💸 Settle Up</h2>
-                    <p class="card-subtitle">Track who owes whom across all games. Settle partially or fully.</p>
-                    <div id="settle-balances"></div>
+                    <p class="card-subtitle">Net settlement across all games</p>
+                    <div id="settle-summary"></div>
                 </div>
-                <!-- Pending Transactions -->
-                <div class="glass-card" style="margin-top:16px;">
-                    <h2>⏳ Pending Transactions</h2>
-                    <div id="settle-pending"></div>
-                </div>
-                <!-- Settled History -->
-                <div class="glass-card" style="margin-top:16px;">
-                    <div class="settle-history-header">
-                        <h2>✅ Settled</h2>
+                <div class="glass-card" style="margin-top:16px;" id="settle-totals-card">
+                    <div class="settle-totals-header" id="settle-totals-toggle">
+                        <h2>📊 Totals</h2>
+                        <span class="settle-expand-icon">▾</span>
                     </div>
-                    <div id="settle-history"></div>
+                    <div id="settle-totals" class="settle-totals-body"></div>
                 </div>
             </section>
         </main>
