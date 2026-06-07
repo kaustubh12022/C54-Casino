@@ -603,124 +603,174 @@ button{cursor:pointer;font-family:inherit;outline:none;border:none;}
 .history-card.expanded .btn-delete-history{display:block;}
 
 /* ══════════════════════════════════════════════════════════
-   Settlement (Splitwise-like)
+   Settlement — Splitwise-style Minimal
    ══════════════════════════════════════════════════════════ */
 
-/* Balance Summary Table */
-.settle-table{
-    width:100%;border-collapse:collapse;margin-top:10px;
+/* All-clear state */
+.settle-all-clear {
+    text-align: center;
+    padding: 40px 20px;
 }
-.settle-table th{
-    text-align:left;font-size:.72rem;text-transform:uppercase;
-    letter-spacing:.8px;color:var(--text-dim);padding:8px 6px;
-    border-bottom:1px solid var(--border-glass);
+.settle-all-clear .settle-clear-icon {
+    font-size: 2.8rem;
+    margin-bottom: 12px;
+    display: block;
+    animation: settlePop .5s cubic-bezier(.16,1,.3,1);
 }
-.settle-table td{
-    padding:10px 6px;border-bottom:1px solid rgba(255,255,255,0.03);
-    font-size:.88rem;
+.settle-all-clear .settle-clear-text {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--green);
+    margin-bottom: 4px;
 }
-.settle-table.settled td{opacity:.7;font-size:.82rem;}
-.settle-person{font-weight:700;}
-.settle-person.owes{color:var(--red);}
-.settle-person.gets{color:var(--green);}
-.settle-arrow{
-    color:var(--text-dim);font-size:.72rem;text-align:center;
-    white-space:nowrap;padding:10px 4px;
+.settle-all-clear .settle-clear-sub {
+    font-size: .82rem;
+    color: var(--text-dim);
 }
-.settle-arrow-sm{
-    color:var(--text-dim);font-size:.82rem;padding:0 4px;
-}
-.settle-amount{
-    font-weight:700;color:var(--gold);text-align:right;
+@keyframes settlePop {
+    from { transform: scale(.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
 }
 
-/* Pending Transaction Cards */
-.settle-card{
-    background:rgba(255,255,255,0.02);
-    border:1px solid var(--border-glass);
-    border-radius:var(--radius-sm);padding:14px;
-    margin-bottom:10px;transition:all .2s;
+/* Transfer Row — the core "B → A ₹120" arrow layout */
+.settle-transfer-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.025);
+    border: 1px solid var(--border-glass);
+    margin-bottom: 8px;
+    transition: all .2s;
+    animation: smoothSlideUp .4s cubic-bezier(.16,1,.3,1) both;
 }
-.settle-card-top{
-    display:flex;justify-content:space-between;align-items:center;
-    margin-bottom:10px;
+.settle-transfer-row:hover {
+    border-color: var(--border-active);
+    background: rgba(255,255,255,0.04);
 }
-.settle-card-players{
-    display:flex;align-items:center;gap:6px;font-weight:600;font-size:.92rem;
+.settle-transfer-from {
+    font-weight: 700;
+    font-size: .95rem;
+    color: var(--red);
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-.settle-from{color:var(--red);}
-.settle-to{color:var(--green);}
-.settle-badge{
-    font-size:.68rem;font-weight:700;padding:3px 8px;border-radius:20px;
-    text-transform:uppercase;letter-spacing:.5px;
+.settle-transfer-arrow {
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    opacity: .7;
 }
-.settle-badge.pending{
-    background:rgba(245,158,11,0.1);color:var(--gold);
-    border:1px solid rgba(245,158,11,0.2);
+.settle-transfer-to {
+    font-weight: 700;
+    font-size: .95rem;
+    color: var(--green);
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-.settle-badge.partial{
-    background:rgba(99,102,241,0.1);color:var(--accent2);
-    border:1px solid rgba(99,102,241,0.2);
-}
-
-/* Amounts Row */
-.settle-card-amounts{
-    display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap;
-}
-.settle-card-total,.settle-card-paid,.settle-card-remaining{
-    display:flex;flex-direction:column;gap:2px;
-}
-.settle-label{
-    font-size:.65rem;text-transform:uppercase;letter-spacing:.8px;
-    color:var(--text-dim);font-weight:600;
-}
-
-/* Progress Bar */
-.settle-progress{
-    width:100%;height:4px;background:rgba(255,255,255,0.06);
-    border-radius:4px;overflow:hidden;margin:6px 0;
-}
-.settle-progress-bar{
-    height:100%;background:linear-gradient(90deg,var(--green),var(--accent));
-    border-radius:4px;transition:width .4s cubic-bezier(.16,1,.3,1);
-}
-
-/* Meta */
-.settle-card-meta{
-    display:flex;justify-content:space-between;align-items:center;
-    margin-top:4px;margin-bottom:10px;
-}
-.settle-game-label{
-    font-size:.7rem;color:var(--accent2);font-weight:600;
-    background:rgba(99,102,241,0.08);padding:2px 8px;border-radius:10px;
-}
-.settle-date{
-    font-size:.7rem;color:var(--text-dim);
+.settle-transfer-amount {
+    margin-left: auto;
+    font-weight: 800;
+    font-size: 1rem;
+    color: var(--gold);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
-/* Action Buttons */
-.settle-actions{
-    display:flex;gap:8px;
+/* Settle All button */
+.btn-settle-all {
+    width: 100%;
+    margin-top: 16px;
+    padding: 13px;
+    background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(34,197,94,0.06));
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: var(--radius-sm);
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all .25s;
+    -webkit-tap-highlight-color: transparent;
 }
-.btn-settle-partial,.btn-settle-full{
-    flex:1;padding:10px;border-radius:8px;
-    font-size:.82rem;font-weight:700;cursor:pointer;
-    border:1px solid var(--border-glass);
-    font-family:inherit;transition:all .2s;
-    -webkit-tap-highlight-color:transparent;
+.btn-settle-all:hover {
+    background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(34,197,94,0.1));
+    border-color: rgba(34,197,94,0.4);
 }
-.btn-settle-partial{
-    background:rgba(245,158,11,0.08);color:var(--gold);
-    border-color:rgba(245,158,11,0.2);
+.btn-settle-all:active {
+    transform: scale(.97);
 }
-.btn-settle-partial:active{transform:scale(.96);background:rgba(245,158,11,0.15);}
-.btn-settle-full{
-    background:rgba(34,197,94,0.08);color:var(--green);
-    border-color:rgba(34,197,94,0.2);
-}
-.btn-settle-full:active{transform:scale(.96);background:rgba(34,197,94,0.15);}
 
-/* Settled History Header */
-.settle-history-header{
-    display:flex;justify-content:space-between;align-items:center;
+/* Totals Section — collapsible */
+.settle-totals-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
 }
+.settle-totals-header h2 {
+    margin-bottom: 0;
+}
+.settle-expand-icon {
+    font-size: 1.2rem;
+    color: var(--text-dim);
+    transition: transform .3s ease;
+}
+.settle-totals-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .35s cubic-bezier(.16,1,.3,1), padding .35s ease;
+    padding-top: 0;
+}
+.settle-totals-body.expanded {
+    max-height: 500px;
+    padding-top: 16px;
+}
+.settle-expand-icon.rotated {
+    transform: rotate(180deg);
+}
+
+/* Total lists */
+.settle-totals-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.settle-total-section h4 {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    font-weight: 700;
+}
+.settle-total-section.receivable h4 { color: var(--green); }
+.settle-total-section.payable h4 { color: var(--red); }
+
+.settle-total-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: .85rem;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.settle-total-item:last-child { border-bottom: none; }
+.settle-total-name {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+.settle-total-amount {
+    font-weight: 700;
+}
+.settle-total-amount.positive { color: var(--green); }
+.settle-total-amount.negative { color: var(--red); }
+
