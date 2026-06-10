@@ -15,11 +15,17 @@ const state = {
     rumSelected: new Set(),
 };
 
-// Live session tracking
-let liveSessionId = null;
-let liveChannel = null;
-let isLiveGuest = false;
-let lastSyncTimestamp = null;
+// Live session tracking is intentionally separated by game type.
+const liveSessions = {
+    teenpatti: { id: null, channel: null, isGuest: false, lastSyncTimestamp: null },
+    rummy: { id: null, channel: null, isGuest: false, lastSyncTimestamp: null }
+};
+
+function getLiveSessionState(gameType) {
+    const session = liveSessions[gameType];
+    if (!session) throw new Error('Unknown live session game type: ' + gameType);
+    return session;
+}
 
 // ── DOM helpers ──
 const $ = id => document.getElementById(id);
@@ -411,7 +417,7 @@ function renderTpTracking() {
                 const maxReturn = p.initialTokens + p.boughtMore - p.returned;
                 if (amount > maxReturn) {
                     toast(`❌ ${name} only has ${maxReturn} tokens`);
-                    return;
+                    return false;
                 }
                 p.returned += amount;
                 p.transactions.push({ type: 'return', amount: amount });
@@ -701,7 +707,7 @@ async function saveTpGame() {
 
         tpGame._savedId = data.id;
         toast('✅ Teen Patti game saved!');
-        await endLiveSession();
+        await endLiveSession('teenpatti');
 
         // Push transfers to settlement ledger
         await pushToSettlementLedger(tpGame.transfers, 'Teen Patti');
@@ -742,6 +748,10 @@ async function deleteSavedTpGame() {
 }
 
 function resetTpUI() {
+    if (liveSessions.teenpatti.id) {
+        if (liveSessions.teenpatti.isGuest) unsubscribeLiveSession('teenpatti');
+        else endLiveSession('teenpatti');
+    }
     $('tp-settlement-card').classList.add('hidden');
     $('tp-ingame-card').classList.add('hidden');
     $('tp-initial-card').classList.add('hidden');
@@ -750,7 +760,7 @@ function resetTpUI() {
     $('btn-save-tp').classList.remove('hidden');
     $('btn-delete-tp').classList.add('hidden');
     tpGame = null;
-    isLiveGuest = false;
+    liveSessions.teenpatti.isGuest = false;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1008,7 +1018,7 @@ async function saveRumGame() {
 
         rumGame._savedId = data.id;
         toast('✅ Rummy game saved!');
-        await endLiveSession();
+        await endLiveSession('rummy');
 
         // Push transfers to settlement ledger
         await pushToSettlementLedger(rumGame.transfers, 'Rummy');
@@ -1049,13 +1059,17 @@ async function deleteSavedRumGame() {
 }
 
 function resetRumUI() {
+    if (liveSessions.rummy.id) {
+        if (liveSessions.rummy.isGuest) unsubscribeLiveSession('rummy');
+        else endLiveSession('rummy');
+    }
     $('rummy-settlement-card').classList.add('hidden');
     $('rummy-ingame-card').classList.add('hidden');
     $('rummy-setup-card').classList.remove('hidden');
     $('btn-save-rummy').classList.remove('hidden');
     $('btn-delete-rummy').classList.add('hidden');
     rumGame = null;
-    isLiveGuest = false;
+    liveSessions.rummy.isGuest = false;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1063,7 +1077,25 @@ function resetRumUI() {
 // ══════════════════════════════════════════════════════════
 
 async function createLiveSession(gameType, gameData) {
+    const sessionState = getLiveSessionState(gameType);
     try {
+        const { data: activeSameGame, error: activeGameError } = await supabaseClient
+            .from('live_sessions')
+            .select('id, updated_at, created_at')
+            .eq('status', 'active')
+            .eq('game_type', gameType)
+            .order('updated_at', { ascending: false })
+            .limit(1);
+
+        if (activeGameError) throw activeGameError;
+        if (activeSameGame && activeSameGame.length > 0 && activeSameGame[0].id !== sessionState.id) {
+            toast(gameType === 'teenpatti'
+                ? 'A Teen Patti live session is already active'
+                : 'A Rummy live session is already active');
+            checkActiveSessions();
+            return false;
+        }
+
         // Check if any selected players are already in an active session
         const { data: existingSessions } = await supabaseClient
             .from('live_sessions')
@@ -1073,6 +1105,7 @@ async function createLiveSession(gameType, gameData) {
         if (existingSessions && existingSessions.length > 0) {
             const currentPlayers = Object.keys(gameData.players);
             for (const session of existingSessions) {
+                if (session.id === sessionState.id) continue;
                 const sessionPlayers = Object.keys(session.session_data?.players || {});
                 const overlap = currentPlayers.filter(p => sessionPlayers.includes(p));
                 if (overlap.length > 0) {
@@ -1094,52 +1127,71 @@ async function createLiveSession(gameType, gameData) {
 
         if (error) throw error;
 
-        liveSessionId = data.id;
+        sessionState.id = data.id;
+        sessionState.isGuest = false;
+        sessionState.lastSyncTimestamp = null;
         subscribeToLiveSession(data.id, gameType);
-        toast('📡 Live session started');
+        toast('Live session started');
+        checkActiveSessions();
+        return true;
     } catch (e) {
+        if (e.code === '23505') {
+            toast(gameType === 'teenpatti'
+                ? 'A Teen Patti live session is already active'
+                : 'A Rummy live session is already active');
+            checkActiveSessions();
+            return false;
+        }
         console.warn('Live session creation skipped:', e.message || e);
         // Game still works locally without live session
+        return false;
     }
 }
 
 async function syncLiveSession(gameType, gameData) {
-    if (!liveSessionId) return;
+    const sessionState = getLiveSessionState(gameType);
+    if (!sessionState.id) return;
     try {
         const ts = new Date().toISOString();
-        lastSyncTimestamp = ts;
+        sessionState.lastSyncTimestamp = ts;
         await supabaseClient
             .from('live_sessions')
             .update({
                 session_data: JSON.parse(JSON.stringify(gameData)),
                 updated_at: ts
             })
-            .eq('id', liveSessionId);
+            .eq('id', sessionState.id)
+            .eq('game_type', gameType);
     } catch (e) {
         console.warn('Live sync failed:', e.message || e);
     }
 }
 
-async function endLiveSession() {
-    if (!liveSessionId) return;
+async function endLiveSession(gameType) {
+    const sessionState = getLiveSessionState(gameType);
+    if (!sessionState.id) return;
     try {
         await supabaseClient
             .from('live_sessions')
             .update({ status: 'ended', updated_at: new Date().toISOString() })
-            .eq('id', liveSessionId);
+            .eq('id', sessionState.id)
+            .eq('game_type', gameType);
     } catch (e) {
         console.warn('End live session failed:', e.message || e);
     }
-    unsubscribeLiveSession();
+    unsubscribeLiveSession(gameType);
+    checkActiveSessions();
 }
 
 function subscribeToLiveSession(sessionId, gameType) {
-    if (liveChannel) {
-        supabaseClient.removeChannel(liveChannel);
+    const sessionState = getLiveSessionState(gameType);
+    if (sessionState.channel) {
+        supabaseClient.removeChannel(sessionState.channel);
     }
 
-    liveChannel = supabaseClient
-        .channel('live-session-' + sessionId)
+    sessionState.id = sessionId;
+    sessionState.channel = supabaseClient
+        .channel('live-session-' + gameType + '-' + sessionId)
         .on('postgres_changes', {
             event: 'UPDATE',
             schema: 'public',
@@ -1149,7 +1201,7 @@ function subscribeToLiveSession(sessionId, gameType) {
             const newData = payload.new;
 
             // Skip our own update
-            if (newData.updated_at === lastSyncTimestamp) return;
+            if (newData.updated_at === sessionState.lastSyncTimestamp) return;
 
             if (newData.status === 'ended') {
                 toast('📡 Session ended');
@@ -1164,7 +1216,8 @@ function subscribeToLiveSession(sessionId, gameType) {
                         renderRumSettlementFromData();
                     }
                 }
-                unsubscribeLiveSession();
+                unsubscribeLiveSession(gameType);
+                checkActiveSessions();
                 return;
             }
 
@@ -1178,13 +1231,15 @@ function subscribeToLiveSession(sessionId, gameType) {
         .subscribe();
 }
 
-function unsubscribeLiveSession() {
-    if (liveChannel) {
-        supabaseClient.removeChannel(liveChannel);
-        liveChannel = null;
+function unsubscribeLiveSession(gameType) {
+    const sessionState = getLiveSessionState(gameType);
+    if (sessionState.channel) {
+        supabaseClient.removeChannel(sessionState.channel);
+        sessionState.channel = null;
     }
-    liveSessionId = null;
-    lastSyncTimestamp = null;
+    sessionState.id = null;
+    sessionState.isGuest = false;
+    sessionState.lastSyncTimestamp = null;
 }
 
 // ── Apply Realtime Updates ──
@@ -1306,7 +1361,8 @@ async function checkActiveSessions() {
         const { data, error } = await supabaseClient
             .from('live_sessions')
             .select('*')
-            .eq('status', 'active');
+            .eq('status', 'active')
+            .order('updated_at', { ascending: false });
 
         if (error || !data) return;
 
@@ -1316,21 +1372,29 @@ async function checkActiveSessions() {
         if (tpBanner) tpBanner.classList.add('hidden');
         if (rumBanner) rumBanner.classList.add('hidden');
 
+        const activeByGame = {};
         data.forEach(session => {
-            if (session.id === liveSessionId) return; // Skip our own session
-
-            const players = Object.keys(session.session_data?.players || {}).join(', ');
-
-            if (session.game_type === 'teenpatti' && tpBanner && !tpGame) {
-                tpBanner.classList.remove('hidden');
-                tpBanner.querySelector('.join-players').textContent = 'Players: ' + players;
-                tpBanner.querySelector('.btn-join-session').onclick = () => joinLiveSession(session.id, 'teenpatti');
-            } else if (session.game_type === 'rummy' && rumBanner && !rumGame) {
-                rumBanner.classList.remove('hidden');
-                rumBanner.querySelector('.join-players').textContent = 'Players: ' + players;
-                rumBanner.querySelector('.btn-join-session').onclick = () => joinLiveSession(session.id, 'rummy');
+            if (!liveSessions[session.game_type]) return;
+            if (!activeByGame[session.game_type]) {
+                activeByGame[session.game_type] = session;
             }
         });
+
+        const tpSession = activeByGame.teenpatti;
+        if (tpSession && tpSession.id !== liveSessions.teenpatti.id && tpBanner && !tpGame) {
+            const players = Object.keys(tpSession.session_data?.players || {}).join(', ');
+            tpBanner.classList.remove('hidden');
+            tpBanner.querySelector('.join-players').textContent = 'Players: ' + players;
+            tpBanner.querySelector('.btn-join-session').onclick = () => joinLiveSession(tpSession.id, 'teenpatti');
+        }
+
+        const rumSession = activeByGame.rummy;
+        if (rumSession && rumSession.id !== liveSessions.rummy.id && rumBanner && !rumGame) {
+            const players = Object.keys(rumSession.session_data?.players || {}).join(', ');
+            rumBanner.classList.remove('hidden');
+            rumBanner.querySelector('.join-players').textContent = 'Players: ' + players;
+            rumBanner.querySelector('.btn-join-session').onclick = () => joinLiveSession(rumSession.id, 'rummy');
+        }
     } catch (e) {
         // live_sessions table might not exist yet — silent fail
         console.warn('Session check skipped:', e.message || e);
@@ -1348,9 +1412,12 @@ async function joinLiveSession(sessionId, gameType) {
 
         if (error || !data) throw new Error('Session not found');
         if (data.status !== 'active') { toast('Session has ended'); hideLoading(); return; }
+        if (data.game_type !== gameType) throw new Error('Session type mismatch');
 
-        liveSessionId = sessionId;
-        isLiveGuest = true;
+        const sessionState = getLiveSessionState(gameType);
+        sessionState.id = sessionId;
+        sessionState.isGuest = true;
+        sessionState.lastSyncTimestamp = null;
 
         if (gameType === 'teenpatti') {
             tpGame = data.session_data;
