@@ -7,6 +7,7 @@
 // ── Globals ──
 const PRESET_PLAYERS = ["Kaustubh","Atharva","Nikhil","Dhruv","Aniket","Rushikesh","Shivam"];
 const RUMMY_POINT_VALUE = 0.10;
+const TEEN_PATTI_DEFAULT_INITIAL_TOKENS = 20;
 
 const state = {
     players: [],
@@ -228,7 +229,7 @@ function startTpSetup() {
     const players = {};
     state.tpSelected.forEach(p => {
         players[p] = {
-            initialTokens: 0,
+            initialTokens: TEEN_PATTI_DEFAULT_INITIAL_TOKENS,
             isPaid: false,
             boughtMore: 0,
             returned: 0,
@@ -263,7 +264,7 @@ function renderInitialTokenScreen() {
                     <button class="toggle-btn small ${p.isPaid ? 'active' : ''}" data-name="${name}" data-val="paid">Paid</button>
                 </div>
             </div>
-            <input type="number" class="init-token-input" data-name="${name}" value="${p.initialTokens || 100}" min="0" placeholder="Tokens">
+            <input type="number" class="init-token-input" data-name="${name}" value="${p.initialTokens ?? TEEN_PATTI_DEFAULT_INITIAL_TOKENS}" min="0" placeholder="Tokens">
         `;
         list.appendChild(row);
     });
