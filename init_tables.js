@@ -48,6 +48,31 @@ async function run() {
       );
     `);
 
+    // Keep only one active live session per game before enforcing uniqueness.
+    await client.query(`
+      WITH ranked AS (
+        SELECT
+          id,
+          row_number() OVER (
+            PARTITION BY game_type
+            ORDER BY updated_at DESC, created_at DESC, id DESC
+          ) AS rn
+        FROM live_sessions
+        WHERE status = 'active'
+      )
+      UPDATE live_sessions AS ls
+      SET status = 'ended', updated_at = timezone('utc'::text, now())
+      FROM ranked
+      WHERE ls.id = ranked.id
+        AND ranked.rn > 1;
+    `);
+
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS live_sessions_one_active_per_game_idx
+      ON live_sessions (game_type)
+      WHERE status = 'active';
+    `);
+
     // Settlement ledger table (Splitwise-like)
     await client.query(`
       CREATE TABLE IF NOT EXISTS settlement_ledger (
@@ -103,7 +128,19 @@ async function run() {
     `);
 
     // Enable Realtime on live_sessions
-    await client.query(`ALTER PUBLICATION supabase_realtime ADD TABLE live_sessions;`);
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_publication_tables
+          WHERE pubname = 'supabase_realtime'
+            AND schemaname = 'public'
+            AND tablename = 'live_sessions'
+        ) THEN
+          EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE live_sessions';
+        END IF;
+      END $$;
+    `);
 
     console.log('✅ All tables created successfully!');
     console.log('✅ RLS policies applied!');
