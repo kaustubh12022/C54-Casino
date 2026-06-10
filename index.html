@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>C54 Casino</title>
     <meta name="description" content="Track and settle Teen Patti and Rummy card games with friends. Live leaderboards, minimum transaction settlements.">
-    <meta name="theme-color" content="#0f172a">
+    <meta name="theme-color" content="#1a1714">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.json">
@@ -13,7 +13,7 @@
     <link rel="apple-touch-icon" href="icons/icon-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -26,16 +26,16 @@
             </div>
             <nav class="tabs" id="main-tabs">
                 <button class="tab-btn active" data-target="view-teenpatti">
-                    <span class="tab-icon">🃏</span><span class="tab-label">Teen Patti</span>
+                    <span class="tab-icon">♠</span><span class="tab-label">Teen Patti</span>
                 </button>
                 <button class="tab-btn" data-target="view-rummy">
-                    <span class="tab-icon">🂠</span><span class="tab-label">Rummy</span>
+                    <span class="tab-icon">♦</span><span class="tab-label">Rummy</span>
                 </button>
                 <button class="tab-btn" data-target="view-leaderboard">
-                    <span class="tab-icon">🏆</span><span class="tab-label">Leaderboard</span>
+                    <span class="tab-icon">♛</span><span class="tab-label">Leaderboard</span>
                 </button>
                 <button class="tab-btn" data-target="view-settlements">
-                    <span class="tab-icon">💸</span><span class="tab-label">Settle Up</span>
+                    <span class="tab-icon">₹</span><span class="tab-label">Settle Up</span>
                 </button>
             </nav>
         </header>
@@ -45,7 +45,7 @@
             <section id="view-teenpatti" class="view active">
                 <!-- Setup -->
                 <div class="glass-card setup-card" id="tp-setup-card">
-                    <h2>🃏 New Teen Patti Game</h2>
+                    <h2>New Game · Teen Patti</h2>
                     <div class="config-section">
                         <div class="config-row">
                             <label for="tp-token-price">Token Price (₹)</label>
@@ -63,16 +63,16 @@
                             <h4>Live Teen Patti Session</h4>
                         </div>
                         <div class="join-players"></div>
-                        <button class="btn-join-session">📡 Join Live Session</button>
+                        <button class="btn-join-session">Join Live Session</button>
                     </div>
-                    <button class="btn-primary" id="btn-start-tp" disabled>🎮 Start Game</button>
+                    <button class="btn-primary" id="btn-start-tp" disabled>Start Game</button>
                 </div>
                 <!-- Initial Token Buy Screen -->
                 <div class="glass-card hidden" id="tp-initial-card">
-                    <h2>🪙 Initial Token Buy</h2>
+                    <h2>Initial Token Buy</h2>
                     <p class="card-subtitle">Enter how many tokens each player is taking. All on <strong>Credit</strong> by default.</p>
                     <div id="tp-initial-list"></div>
-                    <button class="btn-primary" id="btn-begin-tp">▶ Begin Game</button>
+                    <button class="btn-primary" id="btn-begin-tp">Begin Game</button>
                 </div>
                 <!-- In-Game -->
                 <div class="glass-card hidden" id="tp-ingame-card">
@@ -85,13 +85,13 @@
                 </div>
                 <!-- Settlement -->
                 <div class="glass-card hidden" id="tp-settlement-card">
-                    <h2>💰 Settlement</h2>
+                    <h2>Settlement</h2>
                     <div id="tp-mismatch-info"></div>
                     <div id="tp-settlement-results"></div>
                     <h3 class="section-title">Minimum Transfers</h3>
                     <div id="tp-transfers-list"></div>
-                    <button class="btn-primary" id="btn-save-tp">✅ Save Game</button>
-                    <button class="btn-danger hidden" id="btn-delete-tp" style="margin-top:8px;">🗑️ Delete Game (Test)</button>
+                    <button class="btn-primary" id="btn-save-tp">Save Game</button>
+                    <button class="btn-danger hidden" id="btn-delete-tp" style="margin-top:8px;">Delete Game (Test)</button>
                     <button class="btn-outline" id="btn-newgame-tp" style="margin-top:8px;">New Game</button>
                 </div>
             </section>
@@ -100,7 +100,7 @@
             <section id="view-rummy" class="view">
                 <!-- Setup -->
                 <div class="glass-card setup-card" id="rummy-setup-card">
-                    <h2>🂠 New Rummy Game</h2>
+                    <h2>New Game · Rummy</h2>
                     <div class="config-section">
                         <div class="config-row">
                             <label>Point Value</label>
@@ -118,9 +118,9 @@
                             <h4>Live Rummy Session</h4>
                         </div>
                         <div class="join-players"></div>
-                        <button class="btn-join-session">📡 Join Live Session</button>
+                        <button class="btn-join-session">Join Live Session</button>
                     </div>
-                    <button class="btn-primary" id="btn-start-rummy" disabled>🎮 Start Game</button>
+                    <button class="btn-primary" id="btn-start-rummy" disabled>Start Game</button>
                 </div>
                 <!-- In-Game -->
                 <div class="glass-card hidden" id="rummy-ingame-card">
@@ -135,13 +135,13 @@
                 </div>
                 <!-- Settlement -->
                 <div class="glass-card hidden" id="rummy-settlement-card">
-                    <h2>💰 Rummy Settlement</h2>
+                    <h2>Rummy Settlement</h2>
                     <div id="rummy-settlement-results"></div>
                     <h3 class="section-title">Minimum Transfers</h3>
                     <div id="rummy-transfers-list"></div>
                     <div class="verify-badge" id="rummy-verify"></div>
-                    <button class="btn-primary" id="btn-save-rummy">✅ Save Game</button>
-                    <button class="btn-danger hidden" id="btn-delete-rummy" style="margin-top:8px;">🗑️ Delete Game (Test)</button>
+                    <button class="btn-primary" id="btn-save-rummy">Save Game</button>
+                    <button class="btn-danger hidden" id="btn-delete-rummy" style="margin-top:8px;">Delete Game (Test)</button>
                     <button class="btn-outline" id="btn-newgame-rummy" style="margin-top:8px;">New Game</button>
                 </div>
             </section>
@@ -149,7 +149,7 @@
             <!-- ========== LEADERBOARD VIEW ========== -->
             <section id="view-leaderboard" class="view">
                 <div class="glass-card">
-                    <h2>🏆 Leaderboard</h2>
+                    <h2>Leaderboard</h2>
                     <nav class="sub-tabs" id="lb-sub-tabs">
                         <button class="sub-tab active" data-lb="combined">All</button>
                         <button class="sub-tab" data-lb="teenpatti">Teen Patti</button>
@@ -160,7 +160,7 @@
                     </div>
                 </div>
                 <div class="glass-card" style="margin-top:16px;">
-                    <h2>📜 Game History</h2>
+                    <h2>Game History</h2>
                     <nav class="sub-tabs" id="history-sub-tabs">
                         <button class="sub-tab active" data-hist="all">All</button>
                         <button class="sub-tab" data-hist="teenpatti">Teen Patti</button>
@@ -175,13 +175,13 @@
             <!-- ========== SETTLEMENTS VIEW ========== -->
             <section id="view-settlements" class="view">
                 <div class="glass-card">
-                    <h2>💸 Settle Up</h2>
+                    <h2>Settle Up</h2>
                     <p class="card-subtitle">Tap a player to see details</p>
                     <div id="settle-players"></div>
                     <div id="settle-mismatch-note"></div>
                 </div>
                 <div class="glass-card" style="margin-top:16px;" id="settle-quick-card">
-                    <h2>⚡ Minimum Transfers</h2>
+                    <h2>Minimum Transfers</h2>
                     <p class="card-subtitle">Fewest payments to settle everything</p>
                     <div id="settle-quick"></div>
                 </div>
@@ -219,8 +219,8 @@
             <h3 id="token-modal-title">Tokens</h3>
             <input type="number" id="token-modal-input" min="1" value="50">
             <div class="token-modal-toggle hidden" id="token-modal-toggle">
-                <button class="toggle-btn active" data-val="credit" id="toggle-credit">🏷️ Credit</button>
-                <button class="toggle-btn" data-val="paid" id="toggle-paid">💵 Paid</button>
+                <button class="toggle-btn active" data-val="credit" id="toggle-credit">Credit</button>
+                <button class="toggle-btn" data-val="paid" id="toggle-paid">Paid</button>
             </div>
             <div class="modal-actions">
                 <button class="btn-outline" id="token-modal-cancel">Cancel</button>
