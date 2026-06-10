@@ -749,8 +749,7 @@ async function deleteSavedTpGame() {
 
 function resetTpUI() {
     if (liveSessions.teenpatti.id) {
-        if (liveSessions.teenpatti.isGuest) unsubscribeLiveSession('teenpatti');
-        else endLiveSession('teenpatti');
+        endLiveSession('teenpatti');
     }
     $('tp-settlement-card').classList.add('hidden');
     $('tp-ingame-card').classList.add('hidden');
@@ -1060,8 +1059,7 @@ async function deleteSavedRumGame() {
 
 function resetRumUI() {
     if (liveSessions.rummy.id) {
-        if (liveSessions.rummy.isGuest) unsubscribeLiveSession('rummy');
-        else endLiveSession('rummy');
+        endLiveSession('rummy');
     }
     $('rummy-settlement-card').classList.add('hidden');
     $('rummy-ingame-card').classList.add('hidden');
@@ -1356,6 +1354,8 @@ function renderRumSettlementFromData() {
 }
 
 // ── Check for Active Sessions & Show Join Banners ──
+const STALE_SESSION_MS = 12 * 60 * 60 * 1000; // 12 hours
+
 async function checkActiveSessions() {
     try {
         const { data, error } = await supabaseClient
@@ -1372,32 +1372,78 @@ async function checkActiveSessions() {
         if (tpBanner) tpBanner.classList.add('hidden');
         if (rumBanner) rumBanner.classList.add('hidden');
 
+        // Auto-cleanup stale sessions (older than 12 hours)
+        const now = Date.now();
+        const staleIds = [];
+        const activeSessions = data.filter(session => {
+            const updatedAt = new Date(session.updated_at).getTime();
+            if (now - updatedAt > STALE_SESSION_MS) {
+                staleIds.push(session.id);
+                return false;
+            }
+            return true;
+        });
+
+        if (staleIds.length > 0) {
+            // End stale sessions in background
+            supabaseClient
+                .from('live_sessions')
+                .update({ status: 'ended', updated_at: new Date().toISOString() })
+                .in('id', staleIds)
+                .then(() => console.log('Cleaned up', staleIds.length, 'stale session(s)'))
+                .catch(e => console.warn('Stale session cleanup failed:', e.message || e));
+        }
+
         const activeByGame = {};
-        data.forEach(session => {
+        activeSessions.forEach(session => {
             if (!liveSessions[session.game_type]) return;
             if (!activeByGame[session.game_type]) {
                 activeByGame[session.game_type] = session;
             }
         });
 
-        const tpSession = activeByGame.teenpatti;
-        if (tpSession && tpSession.id !== liveSessions.teenpatti.id && tpBanner && !tpGame) {
-            const players = Object.keys(tpSession.session_data?.players || {}).join(', ');
-            tpBanner.classList.remove('hidden');
-            tpBanner.querySelector('.join-players').textContent = 'Players: ' + players;
-            tpBanner.querySelector('.btn-join-session').onclick = () => joinLiveSession(tpSession.id, 'teenpatti');
-        }
-
-        const rumSession = activeByGame.rummy;
-        if (rumSession && rumSession.id !== liveSessions.rummy.id && rumBanner && !rumGame) {
-            const players = Object.keys(rumSession.session_data?.players || {}).join(', ');
-            rumBanner.classList.remove('hidden');
-            rumBanner.querySelector('.join-players').textContent = 'Players: ' + players;
-            rumBanner.querySelector('.btn-join-session').onclick = () => joinLiveSession(rumSession.id, 'rummy');
-        }
+        setupJoinBanner(activeByGame.teenpatti, 'teenpatti', tpBanner, tpGame);
+        setupJoinBanner(activeByGame.rummy, 'rummy', rumBanner, rumGame);
     } catch (e) {
         // live_sessions table might not exist yet — silent fail
         console.warn('Session check skipped:', e.message || e);
+    }
+}
+
+function setupJoinBanner(session, gameType, banner, currentGame) {
+    if (!session || !banner || currentGame) return;
+    if (session.id === liveSessions[gameType].id) return;
+
+    const players = Object.keys(session.session_data?.players || {}).join(', ');
+    banner.classList.remove('hidden');
+    banner.querySelector('.join-players').textContent = 'Players: ' + players;
+    banner.querySelector('.btn-join-session').onclick = () => joinLiveSession(session.id, gameType);
+
+    // Wire up End Session button
+    const endBtn = banner.querySelector('.btn-end-session');
+    if (endBtn) {
+        endBtn.onclick = (e) => {
+            e.stopPropagation();
+            endSessionById(session.id, gameType);
+        };
+    }
+}
+
+async function endSessionById(sessionId, gameType) {
+    if (!confirm('End this live session? It will be closed for all devices.')) return;
+    try {
+        showLoading();
+        await supabaseClient
+            .from('live_sessions')
+            .update({ status: 'ended', updated_at: new Date().toISOString() })
+            .eq('id', sessionId);
+        toast('Session ended');
+    } catch (e) {
+        console.warn('Failed to end session:', e.message || e);
+        toast('Failed to end session');
+    } finally {
+        hideLoading();
+        checkActiveSessions();
     }
 }
 
