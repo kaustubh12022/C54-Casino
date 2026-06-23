@@ -1831,6 +1831,138 @@ button {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   LEADERBOARD MODE TOGGLE
+   ═══════════════════════════════════════════════════════════ */
+.lb-mode-toggle {
+    display: flex;
+    background: var(--bg-surface);
+    border-radius: var(--radius-pill);
+    padding: 4px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-subtle);
+}
+
+.lb-mode-btn {
+    flex: 1;
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    padding: 8px 16px;
+    font-size: .85rem;
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.lb-mode-btn.active {
+    background: var(--gold-bg);
+    color: var(--accent);
+    border: 1px solid rgba(201,169,110,0.30);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SETTLEMENT FEATURES
+   ═══════════════════════════════════════════════════════════ */
+.btn-settle-all {
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(125,174,107,0.30);
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    font-size: .8rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-settle-all:hover {
+    background: rgba(125,174,107,0.20);
+}
+
+.btn-settle-all:active {
+    transform: scale(0.96);
+}
+
+.settle-action-col {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+.btn-settle {
+    background: var(--gold-bg);
+    color: var(--accent);
+    border: 1px solid rgba(201,169,110,0.30);
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    font-size: .75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-settle:active {
+    transform: scale(0.96);
+}
+
+.settle-transfer-row.settled {
+    opacity: 0.6;
+}
+
+.settle-transfer-row.settled .settle-transfer-amount {
+    text-decoration: line-through;
+    color: var(--text-dim);
+}
+
+.settled-badge {
+    color: var(--green);
+    font-size: .75rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.settle-history-item {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sh-players {
+    font-size: .9rem;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sh-amount {
+    font-size: .95rem;
+    font-weight: 700;
+    color: var(--green);
+}
+
+.sh-date {
+    font-size: .75rem;
+    color: var(--text-dim);
+}
+
+.sh-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════
    RESPONSIVE — Desktop Enhancement
    ═══════════════════════════════════════════════════════════ */
 @media (min-width: 768px) {

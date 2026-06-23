@@ -152,6 +152,10 @@
             <section id="view-leaderboard" class="view">
                 <div class="glass-card">
                     <h2>Leaderboard</h2>
+                    <div class="lb-mode-toggle" id="lb-mode-toggle">
+                        <button class="lb-mode-btn active" data-mode="current">Current</button>
+                        <button class="lb-mode-btn" data-mode="alltime">All Time</button>
+                    </div>
                     <nav class="sub-tabs" id="lb-sub-tabs">
                         <button class="sub-tab active" data-lb="combined">All</button>
                         <button class="sub-tab" data-lb="teenpatti">Teen Patti</button>
@@ -183,9 +187,18 @@
                     <div id="settle-mismatch-note"></div>
                 </div>
                 <div class="glass-card" style="margin-top:16px;" id="settle-quick-card">
-                    <h2>Minimum Transfers</h2>
+                    <div class="game-header" style="margin-bottom: 8px;">
+                        <h2>Minimum Transfers</h2>
+                        <button class="btn-settle-all hidden" id="btn-settle-all">Settle All ✅</button>
+                    </div>
                     <p class="card-subtitle">Fewest payments to settle everything</p>
                     <div id="settle-quick"></div>
+                </div>
+                <div class="glass-card" style="margin-top:16px;" id="settle-history-card">
+                    <h2>Settlement History</h2>
+                    <div id="settle-history">
+                        <div class="empty-state">No settlements recorded.</div>
+                    </div>
                 </div>
             </section>
         </main>
@@ -227,6 +240,19 @@
             <div class="modal-actions">
                 <button class="btn-outline" id="token-modal-cancel">Cancel</button>
                 <button class="btn-primary" id="token-modal-save">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settle Amount Modal -->
+    <div id="settle-modal-overlay" class="modal-overlay hidden">
+        <div class="modal glass-card">
+            <h3 id="settle-modal-title">Settle Transfer</h3>
+            <p class="card-subtitle" id="settle-modal-desc"></p>
+            <input type="number" id="settle-modal-input" min="0.1" step="0.1" placeholder="Amount to settle">
+            <div class="modal-actions">
+                <button class="btn-outline" id="settle-modal-cancel">Cancel</button>
+                <button class="btn-primary" id="settle-modal-save">Mark Settled</button>
             </div>
         </div>
     </div>

@@ -3,7 +3,7 @@
 // Usage: node init_tables.js
 
 const { Client } = require('pg');
-const client = new Client({ connectionString: 'postgresql://postgres:Kaustubh@1202@db.ixczvfnzttmiecgqoiek.supabase.co:5432/postgres' });
+const client = new Client({ connectionString: 'postgresql://postgres:Kaustubh%401202@db.ixczvfnzttmiecgqoiek.supabase.co:5432/postgres' });
 
 async function run() {
   try {
@@ -83,6 +83,19 @@ async function run() {
         paid_amount numeric NOT NULL DEFAULT 0,
         status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'partial', 'settled')),
         game_label text,
+        created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+        settled_at timestamptz
+      );
+    `);
+
+    // Settle ups table (actual mistake correction records)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS settle_ups (
+        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+        from_player text NOT NULL,
+        to_player text NOT NULL,
+        amount numeric NOT NULL,
+        note text,
         created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL
       );
     `);
@@ -93,9 +106,10 @@ async function run() {
     await client.query(`ALTER TABLE players ENABLE ROW LEVEL SECURITY;`);
     await client.query(`ALTER TABLE live_sessions ENABLE ROW LEVEL SECURITY;`);
     await client.query(`ALTER TABLE settlement_ledger ENABLE ROW LEVEL SECURITY;`);
+    await client.query(`ALTER TABLE settle_ups ENABLE ROW LEVEL SECURITY;`);
 
     // RLS Policies — allow anon access for this app
-    const tables = ['teen_patti_games', 'rummy_games', 'players', 'live_sessions', 'settlement_ledger'];
+    const tables = ['teen_patti_games', 'rummy_games', 'players', 'live_sessions', 'settlement_ledger', 'settle_ups'];
     for (const table of tables) {
       await client.query(`
         DO $$ BEGIN
