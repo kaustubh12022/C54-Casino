@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupTeenPatti();
     setupRummy();
     setupLeaderboard();
+    setupSettleModal();
     await loadPlayers();
     checkActiveSessions();
 });
@@ -1556,9 +1557,18 @@ function renderTransfers(containerId, transfers) {
 // ══════════════════════════════════════════════════════════
 //  LEADERBOARD & HISTORY
 // ══════════════════════════════════════════════════════════
-let lbData = { tp: [], rum: [] };
+let lbData = { tp: [], rum: [], settleUps: [] };
 
 function setupLeaderboard() {
+    $$('#lb-mode-toggle .lb-mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            $$('#lb-mode-toggle .lb-mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const activeLb = document.querySelector('#lb-sub-tabs .sub-tab.active');
+            renderLeaderboardTable(activeLb ? activeLb.dataset.lb : 'combined');
+        });
+    });
+
     $$('#lb-sub-tabs .sub-tab').forEach(btn => {
         btn.addEventListener('click', () => {
             $$('#lb-sub-tabs .sub-tab').forEach(b => b.classList.remove('active'));
@@ -1578,9 +1588,10 @@ function setupLeaderboard() {
 async function refreshLeaderboard() {
     showLoading();
     try {
-        const [tpRes, rumRes] = await Promise.all([
+        const [tpRes, rumRes, settleRes] = await Promise.all([
             supabaseClient.from('teen_patti_games').select('id,data').order('created_at', { ascending: false }).limit(50),
-            supabaseClient.from('rummy_games').select('id,data').order('created_at', { ascending: false }).limit(50)
+            supabaseClient.from('rummy_games').select('id,data').order('created_at', { ascending: false }).limit(50),
+            supabaseClient.from('settle_ups').select('*').order('created_at', { ascending: false })
         ]);
 
         if (tpRes.error) throw new Error(tpRes.error.message);
@@ -1588,6 +1599,7 @@ async function refreshLeaderboard() {
 
         lbData.tp = tpRes.data.map(row => ({ ...row.data, _rowId: row.id }));
         lbData.rum = rumRes.data.map(row => ({ ...row.data, _rowId: row.id }));
+        lbData.settleUps = settleRes.data || [];
 
     } catch (e) {
         console.warn('Leaderboard load failed:', e.message || e);
@@ -1606,9 +1618,10 @@ function renderLeaderboardTable(type) {
     const playerStats = {};
 
     function addStats(name, amount) {
-        if (!playerStats[name]) playerStats[name] = { won: 0, lost: 0, games: 0 };
+        if (!playerStats[name]) playerStats[name] = { won: 0, lost: 0, games: 0, net: 0 };
         if (amount > 0) playerStats[name].won += amount;
         else playerStats[name].lost += Math.abs(amount);
+        playerStats[name].net += amount;
         playerStats[name].games++;
     }
 
@@ -1627,8 +1640,21 @@ function renderLeaderboardTable(type) {
         });
     }
 
+    // Apply settlements for 'current' mode
+    const modeBtn = document.querySelector('#lb-mode-toggle .lb-mode-btn.active');
+    const mode = modeBtn ? modeBtn.dataset.mode : 'current';
+
+    if (mode === 'current') {
+        lbData.settleUps.forEach(s => {
+            // from_player paid to_player. So from_player's net goes up (debt reduced)
+            // to_player's net goes down (credit reduced)
+            if (playerStats[s.from_player]) playerStats[s.from_player].net += parseFloat(s.amount);
+            if (playerStats[s.to_player]) playerStats[s.to_player].net -= parseFloat(s.amount);
+        });
+    }
+
     const entries = Object.entries(playerStats)
-        .map(([name, s]) => ({ name, net: Math.round((s.won - s.lost) * 100) / 100, won: s.won, lost: s.lost, games: s.games }))
+        .map(([name, s]) => ({ name, net: Math.round(s.net * 100) / 100, won: s.won, lost: s.lost, games: s.games }))
         .sort((a, b) => b.net - a.net);
 
     if (entries.length === 0) {
@@ -1765,13 +1791,16 @@ async function refreshSettlements() {
     showLoading();
     try {
         // Fetch all game data (same source as leaderboard)
-        const [tpRes, rumRes] = await Promise.all([
+        const [tpRes, rumRes, settleRes] = await Promise.all([
             supabaseClient.from('teen_patti_games').select('id,data').limit(500),
-            supabaseClient.from('rummy_games').select('id,data').limit(500)
+            supabaseClient.from('rummy_games').select('id,data').limit(500),
+            supabaseClient.from('settle_ups').select('*').order('created_at', { ascending: false })
         ]);
 
         if (tpRes.error) throw new Error(tpRes.error.message);
         if (rumRes.error) throw new Error(rumRes.error.message);
+        
+        const settleUps = settleRes.data || [];
 
         const allGames = [
             ...(tpRes.data || []).map(r => r.data),
@@ -1791,8 +1820,21 @@ async function refreshSettlements() {
                 if (!p.name) return;
                 const amt = p.netAmount ?? p.netBalance ?? 0;
                 if (!playerNet[p.name]) playerNet[p.name] = 0;
-                playerNet[p.name] = Math.round((playerNet[p.name] + amt) * 100) / 100;
+                playerNet[p.name] += amt;
             });
+        });
+
+        // Apply settle ups
+        settleUps.forEach(s => {
+            // from_player paid to_player. So from_player's net goes up (debt reduced)
+            // to_player's net goes down (credit reduced)
+            if (playerNet[s.from_player] !== undefined) playerNet[s.from_player] += parseFloat(s.amount);
+            if (playerNet[s.to_player] !== undefined) playerNet[s.to_player] -= parseFloat(s.amount);
+        });
+
+        // Round playerNet values
+        Object.keys(playerNet).forEach(name => {
+            playerNet[name] = Math.round(playerNet[name] * 100) / 100;
         });
 
         // Step 2: Build balances and handle mismatch (sum must be 0 for algorithm)
@@ -1858,7 +1900,7 @@ async function refreshSettlements() {
         });
 
         // Render
-        renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmount);
+        renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmount, settleUps);
 
     } catch (e) {
         console.warn('Settlement load failed:', e.message || e);
@@ -1869,7 +1911,7 @@ async function refreshSettlements() {
     }
 }
 
-function renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmount) {
+function renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmount, settleUps) {
     const playersContainer = $('settle-players');
     const quickContainer = $('settle-quick');
     const quickCard = $('settle-quick-card');
@@ -1945,18 +1987,44 @@ function renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmo
     // Render quick summary (minimum transfers)
     if (transfers.length > 0 && quickCard) {
         quickCard.classList.remove('hidden');
+        $('btn-settle-all').classList.remove('hidden');
         let quickHTML = '';
         transfers.forEach((t, i) => {
             quickHTML += `<div class="settle-transfer-row" style="animation-delay:${i * 0.06}s">
                 <span class="settle-transfer-from">${t.from}</span>
                 <span class="settle-transfer-arrow">→</span>
                 <span class="settle-transfer-to">${t.to}</span>
-                <span class="settle-transfer-amount">₹${t.amount.toFixed(2)}</span>
+                <div class="settle-action-col">
+                    <span class="settle-transfer-amount">₹${t.amount.toFixed(2)}</span>
+                    <button class="btn-settle" data-from="${t.from}" data-to="${t.to}" data-amount="${t.amount}">Settle</button>
+                </div>
             </div>`;
         });
         quickContainer.innerHTML = quickHTML;
     } else if (quickCard) {
         quickCard.classList.add('hidden');
+        $('btn-settle-all').classList.add('hidden');
+    }
+
+    // Render Settlement History
+    const historyContainer = $('settle-history');
+    if (historyContainer && settleUps) {
+        if (settleUps.length === 0) {
+            historyContainer.innerHTML = '<div class="empty-state">No settlements recorded.</div>';
+        } else {
+            let historyHTML = '';
+            settleUps.forEach((s, i) => {
+                const date = new Date(s.created_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+                historyHTML += `<div class="settle-history-item animate-in" style="animation-delay:${i * 0.04}s">
+                    <div class="sh-left">
+                        <div class="sh-players"><strong>${s.from_player}</strong> → <strong>${s.to_player}</strong></div>
+                        <div class="sh-date">${date}</div>
+                    </div>
+                    <div class="sh-amount">₹${parseFloat(s.amount).toFixed(2)}</div>
+                </div>`;
+            });
+            historyContainer.innerHTML = historyHTML;
+        }
     }
 
     // Render mismatch note
@@ -1966,6 +2034,136 @@ function renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmo
         } else {
             mismatchNote.innerHTML = '';
         }
+    }
+}
+
+// ══════════════════════════════════════════════════════════
+//  SETTLE UI & MODAL
+// ══════════════════════════════════════════════════════════
+
+let currentSettleData = null;
+
+function setupSettleModal() {
+    $('settle-modal-cancel').onclick = () => {
+        $('settle-modal-overlay').classList.add('hidden');
+        currentSettleData = null;
+    };
+    
+    $('settle-modal-save').onclick = async () => {
+        if (!currentSettleData) return;
+        const inputAmount = parseFloat($('settle-modal-input').value);
+        if (isNaN(inputAmount) || inputAmount <= 0) {
+            toast('❌ Enter a valid amount');
+            return;
+        }
+        if (inputAmount > currentSettleData.maxAmount) {
+            toast(`❌ Amount cannot exceed ₹${currentSettleData.maxAmount.toFixed(2)}`);
+            return;
+        }
+
+        $('settle-modal-overlay').classList.add('hidden');
+        await settleTransfer(currentSettleData.from, currentSettleData.to, inputAmount);
+        currentSettleData = null;
+    };
+
+    $('settle-modal-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') $('settle-modal-save').click();
+    });
+
+    // Event delegation for dynamically added "Settle" buttons
+    const quickContainer = $('settle-quick');
+    if (quickContainer) {
+        quickContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('btn-settle')) {
+                const btn = e.target;
+                const from = btn.dataset.from;
+                const to = btn.dataset.to;
+                const amount = parseFloat(btn.dataset.amount);
+                openSettleModal(from, to, amount);
+            }
+        });
+    }
+
+    const btnSettleAll = $('btn-settle-all');
+    if (btnSettleAll) {
+        btnSettleAll.addEventListener('click', () => {
+            if (confirm('Are you sure you want to mark all pending transfers as settled?')) {
+                settleAllTransfers();
+            }
+        });
+    }
+}
+
+function openSettleModal(from, to, maxAmount) {
+    currentSettleData = { from, to, maxAmount };
+    $('settle-modal-title').textContent = `Settle: ${from} → ${to}`;
+    $('settle-modal-desc').textContent = `Max pending: ₹${maxAmount.toFixed(2)}`;
+    $('settle-modal-input').value = maxAmount;
+    $('settle-modal-input').max = maxAmount;
+    $('settle-modal-overlay').classList.remove('hidden');
+    setTimeout(() => {
+        $('settle-modal-input').select();
+        $('settle-modal-input').focus();
+    }, 100);
+}
+
+async function settleTransfer(from, to, amount) {
+    showLoading();
+    try {
+        const { error } = await supabaseClient.from('settle_ups').insert([{
+            from_player: from,
+            to_player: to,
+            amount: amount,
+            note: 'Manual settle via app'
+        }]);
+
+        if (error) throw error;
+        toast('✅ Settlement recorded');
+        await refreshSettlements();
+        // Since we also updated the DB, might be good to update LB if they view it
+    } catch (e) {
+        console.error('Failed to settle:', e.message || e);
+        toast('❌ Failed to record settlement');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function settleAllTransfers() {
+    showLoading();
+    try {
+        const pendingTransfers = [];
+        // Extract transfers directly from the UI or recalculate. 
+        // Better: we can extract them from the dataset of the Settle buttons
+        const btns = document.querySelectorAll('.btn-settle');
+        btns.forEach(btn => {
+            const amount = parseFloat(btn.dataset.amount);
+            if (amount > 0) {
+                pendingTransfers.push({
+                    from_player: btn.dataset.from,
+                    to_player: btn.dataset.to,
+                    amount: amount,
+                    note: 'Bulk settle all via app'
+                });
+            }
+        });
+
+        if (pendingTransfers.length === 0) {
+            toast('Nothing to settle');
+            hideLoading();
+            return;
+        }
+
+        const { error } = await supabaseClient.from('settle_ups').insert(pendingTransfers);
+
+        if (error) throw error;
+        toast('✅ All transfers settled');
+        await refreshSettlements();
+    } catch (e) {
+        console.error('Failed bulk settle:', e.message || e);
+        toast('❌ Failed to record settlements');
+    } finally {
+        hideLoading();
     }
 }
 
