@@ -1516,26 +1516,147 @@ async function joinLiveSession(sessionId, gameType) {
 //  MINIMUM TRANSACTION SETTLEMENT ALGORITHM
 // ══════════════════════════════════════════════════════════
 function minimumTransactions(balances) {
-    let debtors = balances.filter(b => b.balance < -0.001)
-        .map(b => ({ ...b, balance: Math.round(b.balance * 100) / 100 }))
-        .sort((a, b) => a.balance - b.balance);
-    let creditors = balances.filter(b => b.balance > 0.001)
-        .map(b => ({ ...b, balance: Math.round(b.balance * 100) / 100 }))
-        .sort((a, b) => b.balance - a.balance);
+    // 1. Convert to integer cents (paisa) to prevent floating point inaccuracies
+    const items = balances
+        .map(b => ({
+            player: b.player,
+            cents: Math.round((b.balance || 0) * 100)
+        }))
+        .filter(b => b.cents !== 0);
+
+    if (items.length === 0) return [];
+
+    // Ensure sum is exactly 0. If there's a 1-2 cent rounding residue, adjust the largest balance
+    const totalCents = items.reduce((s, b) => s + b.cents, 0);
+    if (totalCents !== 0) {
+        let maxIdx = 0;
+        for (let idx = 1; idx < items.length; idx++) {
+            if (Math.abs(items[idx].cents) > Math.abs(items[maxIdx].cents)) {
+                maxIdx = idx;
+            }
+        }
+        items[maxIdx].cents -= totalCents;
+    }
+
+    const n = items.length;
+    if (n === 0) return [];
+
+    // For optimal subset partitioning (when n <= 15):
+    // Find maximal zero-sum subsets to minimize transactions: N - max_subsets
+    let subsets = [];
+    if (n <= 15) {
+        subsets = findZeroSumSubsets(items);
+    } else {
+        subsets = [items];
+    }
 
     const transfers = [];
-    let i = 0, j = 0;
-    while (i < debtors.length && j < creditors.length) {
-        const amount = Math.round(Math.min(Math.abs(debtors[i].balance), creditors[j].balance) * 100) / 100;
-        if (amount > 0) {
-            transfers.push({ from: debtors[i].player, to: creditors[j].player, amount });
+
+    for (const group of subsets) {
+        let debtors = group.filter(p => p.cents < 0)
+            .map(p => ({ player: p.player, cents: -p.cents }))
+            .sort((a, b) => b.cents - a.cents);
+        let creditors = group.filter(p => p.cents > 0)
+            .map(p => ({ player: p.player, cents: p.cents }))
+            .sort((a, b) => b.cents - a.cents);
+
+        // First pass: exact matches (debtor == creditor)
+        for (let d = 0; d < debtors.length; d++) {
+            if (debtors[d].cents === 0) continue;
+            for (let c = 0; c < creditors.length; c++) {
+                if (creditors[c].cents === 0) continue;
+                if (debtors[d].cents === creditors[c].cents) {
+                    transfers.push({
+                        from: debtors[d].player,
+                        to: creditors[c].player,
+                        amount: Math.round(debtors[d].cents) / 100
+                    });
+                    debtors[d].cents = 0;
+                    creditors[c].cents = 0;
+                    break;
+                }
+            }
         }
-        debtors[i].balance = Math.round((debtors[i].balance + amount) * 100) / 100;
-        creditors[j].balance = Math.round((creditors[j].balance - amount) * 100) / 100;
-        if (Math.abs(debtors[i].balance) < 0.01) i++;
-        if (Math.abs(creditors[j].balance) < 0.01) j++;
+
+        // Second pass: greedy match remaining
+        let dIdx = 0;
+        let cIdx = 0;
+        while (dIdx < debtors.length && cIdx < creditors.length) {
+            while (dIdx < debtors.length && debtors[dIdx].cents === 0) dIdx++;
+            while (cIdx < creditors.length && creditors[cIdx].cents === 0) cIdx++;
+            if (dIdx >= debtors.length || cIdx >= creditors.length) break;
+
+            const pay = Math.min(debtors[dIdx].cents, creditors[cIdx].cents);
+            if (pay > 0) {
+                transfers.push({
+                    from: debtors[dIdx].player,
+                    to: creditors[cIdx].player,
+                    amount: Math.round(pay) / 100
+                });
+                debtors[dIdx].cents -= pay;
+                creditors[cIdx].cents -= pay;
+            }
+            if (debtors[dIdx].cents === 0) dIdx++;
+            if (creditors[cIdx].cents === 0) cIdx++;
+        }
     }
+
     return transfers;
+}
+
+function findZeroSumSubsets(items) {
+    const n = items.length;
+    const subsetSum = new Int32Array(1 << n);
+    for (let mask = 1; mask < (1 << n); mask++) {
+        const lowestBit = mask & -mask;
+        const idx = 31 - Math.clz32(lowestBit);
+        subsetSum[mask] = subsetSum[mask ^ lowestBit] + items[idx].cents;
+    }
+
+    const dp = new Int32Array(1 << n);
+    const parent = new Int32Array(1 << n).fill(-1);
+
+    for (let mask = 1; mask < (1 << n); mask++) {
+        dp[mask] = 0;
+        if (subsetSum[mask] === 0) {
+            dp[mask] = 1;
+            parent[mask] = mask;
+        }
+        let sub = (mask - 1) & mask;
+        while (sub > 0) {
+            if (subsetSum[sub] === 0 && dp[sub] + dp[mask ^ sub] > dp[mask]) {
+                dp[mask] = dp[sub] + dp[mask ^ sub];
+                parent[mask] = sub;
+            }
+            sub = (sub - 1) & mask;
+        }
+    }
+
+    const fullMask = (1 << n) - 1;
+    if (dp[fullMask] <= 1) {
+        return [items];
+    }
+
+    const groups = [];
+    let remMask = fullMask;
+    while (remMask > 0) {
+        let p = parent[remMask];
+        if (p <= 0 || p === remMask) {
+            const group = [];
+            for (let i = 0; i < n; i++) {
+                if ((remMask & (1 << i)) !== 0) group.push(items[i]);
+            }
+            groups.push(group);
+            break;
+        }
+        const group = [];
+        for (let i = 0; i < n; i++) {
+            if ((p & (1 << i)) !== 0) group.push(items[i]);
+        }
+        groups.push(group);
+        remMask ^= p;
+    }
+    return groups;
 }
 
 function renderTransfers(containerId, transfers) {
@@ -1589,17 +1710,17 @@ async function refreshLeaderboard() {
     showLoading();
     try {
         const [tpRes, rumRes, settleRes] = await Promise.all([
-            supabaseClient.from('teen_patti_games').select('id,data').order('created_at', { ascending: false }).limit(50),
-            supabaseClient.from('rummy_games').select('id,data').order('created_at', { ascending: false }).limit(50),
+            supabaseClient.from('teen_patti_games').select('id,data').order('created_at', { ascending: false }).limit(1000),
+            supabaseClient.from('rummy_games').select('id,data').order('created_at', { ascending: false }).limit(1000),
             supabaseClient.from('settle_ups').select('*').order('created_at', { ascending: false })
         ]);
 
         if (tpRes.error) throw new Error(tpRes.error.message);
         if (rumRes.error) throw new Error(rumRes.error.message);
 
-        lbData.tp = tpRes.data.map(row => ({ ...row.data, _rowId: row.id }));
-        lbData.rum = rumRes.data.map(row => ({ ...row.data, _rowId: row.id }));
-        lbData.settleUps = settleRes.data || [];
+        lbData.tp = (tpRes.data || []).map(row => ({ ...row.data, _rowId: row.id }));
+        lbData.rum = (rumRes.data || []).map(row => ({ ...row.data, _rowId: row.id }));
+        lbData.settleUps = (settleRes && settleRes.data) || [];
 
     } catch (e) {
         console.warn('Leaderboard load failed:', e.message || e);
@@ -1646,15 +1767,24 @@ function renderLeaderboardTable(type) {
 
     if (mode === 'current') {
         lbData.settleUps.forEach(s => {
-            // from_player paid to_player. So from_player's net goes up (debt reduced)
-            // to_player's net goes down (credit reduced)
-            if (playerStats[s.from_player]) playerStats[s.from_player].net += parseFloat(s.amount);
-            if (playerStats[s.to_player]) playerStats[s.to_player].net -= parseFloat(s.amount);
+            const amt = parseFloat(s.amount) || 0;
+            if (playerStats[s.from_player]) playerStats[s.from_player].net += amt;
+            if (playerStats[s.to_player]) playerStats[s.to_player].net -= amt;
         });
     }
 
     const entries = Object.entries(playerStats)
-        .map(([name, s]) => ({ name, net: Math.round(s.net * 100) / 100, won: s.won, lost: s.lost, games: s.games }))
+        .map(([name, s]) => {
+            let net = Math.round(s.net * 100) / 100;
+            if (Math.abs(net) < 0.005) net = 0;
+            return {
+                name,
+                net,
+                won: Math.round(s.won * 100) / 100,
+                lost: Math.round(s.lost * 100) / 100,
+                games: s.games
+            };
+        })
         .sort((a, b) => b.net - a.net);
 
     if (entries.length === 0) {
@@ -1666,9 +1796,11 @@ function renderLeaderboardTable(type) {
     entries.forEach((e, i) => {
         const netCls = e.net > 0 ? 'lb-pos' : e.net < 0 ? 'lb-neg' : '';
         const netStr = e.net > 0 ? '+₹' + e.net.toFixed(2) : e.net < 0 ? '−₹' + Math.abs(e.net).toFixed(2) : '₹0';
+        const trophy = (e.net > 0 && i === 0) ? ' 🏆' : '';
+        const trend = (e.net < 0 && i === entries.length - 1 && entries.length > 1) ? ' 📉' : '';
         html += `<tr class="animate-in" style="animation-delay:${i * 0.04}s">
             <td class="lb-rank">${i + 1}</td>
-            <td>${e.name}${i === 0 ? ' 🏆' : ''}${i === entries.length - 1 && entries.length > 1 ? ' 📉' : ''}</td>
+            <td>${e.name}${trophy}${trend}</td>
             <td class="${netCls}">${netStr}</td>
             <td>₹${e.won.toFixed(2)}</td>
             <td>₹${e.lost.toFixed(2)}</td>
@@ -1792,15 +1924,15 @@ async function refreshSettlements() {
     try {
         // Fetch all game data (same source as leaderboard)
         const [tpRes, rumRes, settleRes] = await Promise.all([
-            supabaseClient.from('teen_patti_games').select('id,data').limit(500),
-            supabaseClient.from('rummy_games').select('id,data').limit(500),
+            supabaseClient.from('teen_patti_games').select('id,data').limit(1000),
+            supabaseClient.from('rummy_games').select('id,data').limit(1000),
             supabaseClient.from('settle_ups').select('*').order('created_at', { ascending: false })
         ]);
 
         if (tpRes.error) throw new Error(tpRes.error.message);
         if (rumRes.error) throw new Error(rumRes.error.message);
         
-        const settleUps = settleRes.data || [];
+        const settleUps = (settleRes && settleRes.data) || [];
 
         const allGames = [
             ...(tpRes.data || []).map(r => r.data),
@@ -1826,26 +1958,29 @@ async function refreshSettlements() {
 
         // Apply settle ups
         settleUps.forEach(s => {
-            // from_player paid to_player. So from_player's net goes up (debt reduced)
-            // to_player's net goes down (credit reduced)
-            if (playerNet[s.from_player] !== undefined) playerNet[s.from_player] += parseFloat(s.amount);
-            if (playerNet[s.to_player] !== undefined) playerNet[s.to_player] -= parseFloat(s.amount);
+            const amt = parseFloat(s.amount) || 0;
+            if (playerNet[s.from_player] === undefined) playerNet[s.from_player] = 0;
+            if (playerNet[s.to_player] === undefined) playerNet[s.to_player] = 0;
+            playerNet[s.from_player] += amt;
+            playerNet[s.to_player] -= amt;
         });
 
-        // Round playerNet values
+        // Round playerNet values and eliminate -0
         Object.keys(playerNet).forEach(name => {
-            playerNet[name] = Math.round(playerNet[name] * 100) / 100;
+            let val = Math.round(playerNet[name] * 100) / 100;
+            if (Math.abs(val) < 0.005) val = 0;
+            playerNet[name] = val;
         });
 
-        // Step 2: Build balances and handle mismatch (sum must be 0 for algorithm)
+        // Step 2: Build active balances (|bal| >= 0.01)
         const balances = Object.entries(playerNet)
-            .filter(([_, bal]) => Math.abs(bal) > 0.005)
-            .map(([player, balance]) => ({ player, balance: Math.round(balance * 100) / 100 }));
+            .filter(([_, bal]) => Math.abs(bal) >= 0.01)
+            .map(([player, balance]) => ({ player, balance }));
 
         const rawSum = Math.round(balances.reduce((s, b) => s + b.balance, 0) * 100) / 100;
         let mismatchAmount = 0;
 
-        if (Math.abs(rawSum) > 0.01) {
+        if (Math.abs(rawSum) >= 0.01) {
             mismatchAmount = Math.abs(rawSum);
             // Distribute mismatch across winners proportionally (losers stay exact)
             if (rawSum < 0) {
@@ -1856,14 +1991,12 @@ async function refreshSettlements() {
                     const absSum = Math.abs(rawSum);
                     let distributed = 0;
                     winners.forEach((b, i) => {
-                        if (i === winners.length - 1) {
-                            // Last winner gets the remainder to avoid rounding drift
-                            b.balance = Math.round((b.balance + (absSum - distributed)) * 100) / 100;
-                        } else {
-                            const share = Math.round((b.balance / totalCredit) * absSum * 100) / 100;
-                            b.balance = Math.round((b.balance + share) * 100) / 100;
-                            distributed += share;
-                        }
+                        const share = (i === winners.length - 1)
+                            ? Math.round((absSum - distributed) * 100) / 100
+                            : Math.round((b.balance / totalCredit) * absSum * 100) / 100;
+                        b.balance = Math.round((b.balance + share) * 100) / 100;
+                        playerNet[b.player] = b.balance;
+                        distributed += share;
                     });
                 }
             } else {
@@ -1873,13 +2006,12 @@ async function refreshSettlements() {
                 if (totalDebt > 0) {
                     let distributed = 0;
                     losers.forEach((b, i) => {
-                        if (i === losers.length - 1) {
-                            b.balance = Math.round((b.balance - (rawSum - distributed)) * 100) / 100;
-                        } else {
-                            const share = Math.round((Math.abs(b.balance) / totalDebt) * rawSum * 100) / 100;
-                            b.balance = Math.round((b.balance - share) * 100) / 100;
-                            distributed += share;
-                        }
+                        const share = (i === losers.length - 1)
+                            ? Math.round((rawSum - distributed) * 100) / 100
+                            : Math.round((Math.abs(b.balance) / totalDebt) * rawSum * 100) / 100;
+                        b.balance = Math.round((b.balance - share) * 100) / 100;
+                        playerNet[b.player] = b.balance;
+                        distributed += share;
                     });
                 }
             }
@@ -1916,98 +2048,106 @@ function renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmo
     const quickContainer = $('settle-quick');
     const quickCard = $('settle-quick-card');
     const mismatchNote = $('settle-mismatch-note');
+    const historyContainer = $('settle-history');
 
     // Check if all settled
-    const hasActivity = Object.values(playerNet).some(v => Math.abs(v) > 0.005);
+    const hasActivity = Object.values(playerNet).some(v => Math.abs(v) >= 0.01);
 
     if (!hasActivity) {
         playersContainer.innerHTML = `
             <div class="settle-all-clear">
                 <span class="settle-clear-icon">🎉</span>
                 <div class="settle-clear-text">All Settled!</div>
-                <div class="settle-clear-sub">No games recorded yet</div>
+                <div class="settle-clear-sub">All active balances are settled</div>
             </div>`;
         if (quickCard) quickCard.classList.add('hidden');
         if (mismatchNote) mismatchNote.innerHTML = '';
-        return;
-    }
+    } else {
+        // Sort players: winners first (descending), then losers (ascending), then zero
+        const sorted = Object.entries(playerNet).sort((a, b) => b[1] - a[1]);
 
-    // Sort players: winners first (descending), then losers (ascending), then zero
-    const sorted = Object.entries(playerNet).sort((a, b) => b[1] - a[1]);
+        // Render player cards
+        let cardsHTML = '';
+        sorted.forEach(([name, net], i) => {
+            const cls = net > 0.005 ? 'winner' : net < -0.005 ? 'loser' : 'neutral';
+            const amtCls = net > 0.005 ? 'positive' : net < -0.005 ? 'negative' : 'zero';
+            const display = net > 0.005 ? '+₹' + net.toFixed(2)
+                : net < -0.005 ? '−₹' + Math.abs(net).toFixed(2)
+                : '₹0';
 
-    // Render player cards
-    let cardsHTML = '';
-    sorted.forEach(([name, net], i) => {
-        const cls = net > 0.005 ? 'winner' : net < -0.005 ? 'loser' : 'neutral';
-        const amtCls = net > 0.005 ? 'positive' : net < -0.005 ? 'negative' : 'zero';
-        const display = net > 0.005 ? '+₹' + net.toFixed(2)
-            : net < -0.005 ? '−₹' + Math.abs(net).toFixed(2)
-            : '₹0';
+            const details = playerTransfers[name] || [];
 
-        const details = playerTransfers[name] || [];
+            let detailHTML = '';
+            if (details.length > 0) {
+                details.sort((a, b) => b.amount - a.amount);
+                details.forEach(d => {
+                    const dirLabel = d.type === 'pays' ? 'PAY' : 'GET';
+                    const dirCls = d.type;
+                    detailHTML += `<div class="settle-detail-row">
+                        <div class="settle-detail-label">
+                            <span class="settle-detail-dir ${dirCls}">${dirLabel}</span>
+                            <span>${d.player}</span>
+                        </div>
+                        <span class="settle-detail-amount ${dirCls}">₹${d.amount.toFixed(2)}</span>
+                    </div>`;
+                });
+            } else {
+                detailHTML = '<div class="settle-detail-empty">No pending transfers</div>';
+            }
 
-        let detailHTML = '';
-        if (details.length > 0) {
-            details.sort((a, b) => b.amount - a.amount);
-            details.forEach(d => {
-                const dirLabel = d.type === 'pays' ? 'PAY' : 'GET';
-                const dirCls = d.type;
-                detailHTML += `<div class="settle-detail-row">
-                    <div class="settle-detail-label">
-                        <span class="settle-detail-dir ${dirCls}">${dirLabel}</span>
-                        <span>${d.player}</span>
+            cardsHTML += `<div class="settle-player ${cls} animate-in" style="animation-delay:${i * 0.05}s" onclick="this.classList.toggle('expanded')">
+                <div class="settle-player-header">
+                    <div class="settle-player-left">
+                        <span class="settle-player-name">${name}</span>
                     </div>
-                    <span class="settle-detail-amount ${dirCls}">₹${d.amount.toFixed(2)}</span>
-                </div>`;
-            });
-        } else {
-            detailHTML = '<div class="settle-detail-empty">No pending transfers</div>';
-        }
-
-        cardsHTML += `<div class="settle-player ${cls} animate-in" style="animation-delay:${i * 0.05}s" onclick="this.classList.toggle('expanded')">
-            <div class="settle-player-header">
-                <div class="settle-player-left">
-                    <span class="settle-player-name">${name}</span>
+                    <div class="settle-player-right">
+                        <span class="settle-player-amount ${amtCls}">${display}</span>
+                        <span class="settle-player-chevron">▾</span>
+                    </div>
                 </div>
-                <div class="settle-player-right">
-                    <span class="settle-player-amount ${amtCls}">${display}</span>
-                    <span class="settle-player-chevron">▾</span>
-                </div>
-            </div>
-            <div class="settle-player-detail">
-                <div class="settle-player-detail-inner">
-                    ${detailHTML}
-                </div>
-            </div>
-        </div>`;
-    });
-
-    playersContainer.innerHTML = cardsHTML;
-
-    // Render quick summary (minimum transfers)
-    if (transfers.length > 0 && quickCard) {
-        quickCard.classList.remove('hidden');
-        $('btn-settle-all').classList.remove('hidden');
-        let quickHTML = '';
-        transfers.forEach((t, i) => {
-            quickHTML += `<div class="settle-transfer-row" style="animation-delay:${i * 0.06}s">
-                <span class="settle-transfer-from">${t.from}</span>
-                <span class="settle-transfer-arrow">→</span>
-                <span class="settle-transfer-to">${t.to}</span>
-                <div class="settle-action-col">
-                    <span class="settle-transfer-amount">₹${t.amount.toFixed(2)}</span>
-                    <button class="btn-settle" data-from="${t.from}" data-to="${t.to}" data-amount="${t.amount}">Settle</button>
+                <div class="settle-player-detail">
+                    <div class="settle-player-detail-inner">
+                        ${detailHTML}
+                    </div>
                 </div>
             </div>`;
         });
-        quickContainer.innerHTML = quickHTML;
-    } else if (quickCard) {
-        quickCard.classList.add('hidden');
-        $('btn-settle-all').classList.add('hidden');
+
+        playersContainer.innerHTML = cardsHTML;
+
+        // Render quick summary (minimum transfers)
+        if (transfers.length > 0 && quickCard) {
+            quickCard.classList.remove('hidden');
+            $('btn-settle-all').classList.remove('hidden');
+            let quickHTML = '';
+            transfers.forEach((t, i) => {
+                quickHTML += `<div class="settle-transfer-row" style="animation-delay:${i * 0.06}s">
+                    <span class="settle-transfer-from">${t.from}</span>
+                    <span class="settle-transfer-arrow">→</span>
+                    <span class="settle-transfer-to">${t.to}</span>
+                    <div class="settle-action-col">
+                        <span class="settle-transfer-amount">₹${t.amount.toFixed(2)}</span>
+                        <button class="btn-settle" data-from="${t.from}" data-to="${t.to}" data-amount="${t.amount}">Settle</button>
+                    </div>
+                </div>`;
+            });
+            quickContainer.innerHTML = quickHTML;
+        } else if (quickCard) {
+            quickCard.classList.add('hidden');
+            $('btn-settle-all').classList.add('hidden');
+        }
+
+        // Render mismatch note
+        if (mismatchNote) {
+            if (mismatchAmount > 0.01) {
+                mismatchNote.innerHTML = `⚠️ ₹${mismatchAmount.toFixed(2)} adjusted across games for token counting discrepancies`;
+            } else {
+                mismatchNote.innerHTML = '';
+            }
+        }
     }
 
-    // Render Settlement History
-    const historyContainer = $('settle-history');
+    // Render Settlement History (always rendered so past settlements are visible)
     if (historyContainer && settleUps) {
         if (settleUps.length === 0) {
             historyContainer.innerHTML = '<div class="empty-state">No settlements recorded.</div>';
@@ -2024,15 +2164,6 @@ function renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmo
                 </div>`;
             });
             historyContainer.innerHTML = historyHTML;
-        }
-    }
-
-    // Render mismatch note
-    if (mismatchNote) {
-        if (mismatchAmount > 0.01) {
-            mismatchNote.innerHTML = `⚠️ ₹${mismatchAmount.toFixed(2)} adjusted across games for token counting discrepancies`;
-        } else {
-            mismatchNote.innerHTML = '';
         }
     }
 }
@@ -2056,13 +2187,13 @@ function setupSettleModal() {
             toast('❌ Enter a valid amount');
             return;
         }
-        if (inputAmount > currentSettleData.maxAmount) {
+        if (inputAmount > currentSettleData.maxAmount + 0.01) {
             toast(`❌ Amount cannot exceed ₹${currentSettleData.maxAmount.toFixed(2)}`);
             return;
         }
 
         $('settle-modal-overlay').classList.add('hidden');
-        await settleTransfer(currentSettleData.from, currentSettleData.to, inputAmount);
+        await settleTransfer(currentSettleData.from, currentSettleData.to, Math.min(inputAmount, currentSettleData.maxAmount));
         currentSettleData = null;
     };
 
@@ -2120,7 +2251,7 @@ async function settleTransfer(from, to, amount) {
         if (error) throw error;
         toast('✅ Settlement recorded');
         await refreshSettlements();
-        // Since we also updated the DB, might be good to update LB if they view it
+        await refreshLeaderboard();
     } catch (e) {
         console.error('Failed to settle:', e.message || e);
         toast('❌ Failed to record settlement');
@@ -2133,8 +2264,6 @@ async function settleAllTransfers() {
     showLoading();
     try {
         const pendingTransfers = [];
-        // Extract transfers directly from the UI or recalculate. 
-        // Better: we can extract them from the dataset of the Settle buttons
         const btns = document.querySelectorAll('.btn-settle');
         btns.forEach(btn => {
             const amount = parseFloat(btn.dataset.amount);
@@ -2159,6 +2288,7 @@ async function settleAllTransfers() {
         if (error) throw error;
         toast('✅ All transfers settled');
         await refreshSettlements();
+        await refreshLeaderboard();
     } catch (e) {
         console.error('Failed bulk settle:', e.message || e);
         toast('❌ Failed to record settlements');
