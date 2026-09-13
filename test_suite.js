@@ -160,6 +160,37 @@ function runAlgorithmTests() {
     const t5to1 = minimumTransactions(b5to1);
     assert(t5to1.length === 5, '5 debtors, 1 creditor produces 5 transfers');
     assert(verifyConservation(b5to1, t5to1), '5 debtors to 1 creditor conserved');
+
+    // 1.12: Multi-subset partitioning with 3 disjoint 3-player subsets (prev. failed with 7 transfers)
+    const b3x3 = [
+        { player: 'C1', balance: 9 },
+        { player: 'D1', balance: -5 },
+        { player: 'D2', balance: -4 },
+        { player: 'C2', balance: 8 },
+        { player: 'D3', balance: -6 },
+        { player: 'D4', balance: -2 },
+        { player: 'C3', balance: 7 },
+        { player: 'D5', balance: -4 },
+        { player: 'D6', balance: -3 }
+    ];
+    const t3x3 = minimumTransactions(b3x3);
+    assert(t3x3.length === 6, `3 disjoint 3-player subsets solved in optimal 6 transfers (got ${t3x3.length})`);
+    assert(verifyConservation(b3x3, t3x3), '3x3 subsets conserved');
+
+    // 1.13: 4 disjoint pairs
+    const b4pairs = [
+        { player: 'A', balance: 10 },
+        { player: 'B', balance: -10 },
+        { player: 'C', balance: 20 },
+        { player: 'D', balance: -20 },
+        { player: 'E', balance: 30 },
+        { player: 'F', balance: -30 },
+        { player: 'G', balance: 40 },
+        { player: 'H', balance: -40 }
+    ];
+    const t4pairs = minimumTransactions(b4pairs);
+    assert(t4pairs.length === 4, `4 disjoint pairs solved in optimal 4 transfers (got ${t4pairs.length})`);
+    assert(verifyConservation(b4pairs, t4pairs), '4 pairs conserved');
 }
 
 async function runDatabaseVerification() {
@@ -245,6 +276,43 @@ async function runDatabaseVerification() {
         { player: 'UserB', balance: partNet['UserB'] }
     ]);
     assert(partTransfers.length === 1 && partTransfers[0].amount === 60, 'Remaining transfer is exactly 60');
+
+    // 2.8: Verify Leaderboard Current mode across all 3 sub-tabs
+    console.log('\n--- 5. Verifying Leaderboard Current & All Time Dual Modes ---');
+    // In Current mode when all previous sessions are settled, ALL 3 sub-tabs must show 0 active net
+    const lbData = {
+        tp: tp.rows.map(r => r.data),
+        rum: rum.rows.map(r => r.data),
+        settleUps: settleUps.rows
+    };
+
+    // Calculate All-Time stats
+    const allTimeStats = { combined: {}, tp: {}, rum: {} };
+    lbData.tp.forEach(g => {
+        (g.players || []).forEach(p => {
+            const amt = p.netAmount || 0;
+            allTimeStats.combined[p.name] = (allTimeStats.combined[p.name] || 0) + amt;
+            allTimeStats.tp[p.name] = (allTimeStats.tp[p.name] || 0) + amt;
+        });
+    });
+    lbData.rum.forEach(g => {
+        (g.players || []).forEach(p => {
+            const amt = p.netBalance || 0;
+            allTimeStats.combined[p.name] = (allTimeStats.combined[p.name] || 0) + amt;
+            allTimeStats.rum[p.name] = (allTimeStats.rum[p.name] || 0) + amt;
+        });
+    });
+
+    const sumAllTime = Object.values(allTimeStats.combined).reduce((s, v) => s + v, 0);
+    assert(Math.abs(sumAllTime) < 0.01, `Exact zero-sum conservation for All-Time cumulative career stats (sum = ${sumAllTime})`);
+    assert(Math.round(allTimeStats.combined['Kaustubh'] * 10) / 10 === 371.1, `Kaustubh all-time career net is +371.10 (got ${allTimeStats.combined['Kaustubh']})`);
+    assert(allTimeStats.tp['Kaustubh'] === 239, `Kaustubh Teen Patti all-time net is +239 (got ${allTimeStats.tp['Kaustubh']})`);
+    assert(Math.round(allTimeStats.rum['Kaustubh'] * 10) / 10 === 132.1, `Kaustubh Rummy all-time net is +132.10 (got ${allTimeStats.rum['Kaustubh']})`);
+    assert(Math.round(allTimeStats.combined['Dhruv'] * 10) / 10 === -449.0, `Dhruv all-time career net is -449.00 (got ${allTimeStats.combined['Dhruv']})`);
+
+    // Verify Current mode active values are 0 across all sub-tabs
+    const hasActiveDebts = nonZeroPlayers.length > 0;
+    assert(!hasActiveDebts, 'System has no active debts (all historical sessions fully settled)');
 
     await client.end();
 }

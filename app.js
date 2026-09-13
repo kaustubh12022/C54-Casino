@@ -1528,7 +1528,7 @@ function minimumTransactions(balances) {
 
     // Ensure sum is exactly 0. If there's a 1-2 cent rounding residue, adjust the largest balance
     const totalCents = items.reduce((s, b) => s + b.cents, 0);
-    if (totalCents !== 0) {
+    if (totalCents !== 0 && items.length > 0) {
         let maxIdx = 0;
         for (let idx = 1; idx < items.length; idx++) {
             if (Math.abs(items[idx].cents) > Math.abs(items[maxIdx].cents)) {
@@ -1538,16 +1538,17 @@ function minimumTransactions(balances) {
         items[maxIdx].cents -= totalCents;
     }
 
-    const n = items.length;
+    const activeItems = items.filter(b => b.cents !== 0);
+    const n = activeItems.length;
     if (n === 0) return [];
 
     // For optimal subset partitioning (when n <= 15):
     // Find maximal zero-sum subsets to minimize transactions: N - max_subsets
     let subsets = [];
     if (n <= 15) {
-        subsets = findZeroSumSubsets(items);
+        subsets = findZeroSumSubsets(activeItems);
     } else {
-        subsets = [items];
+        subsets = [activeItems];
     }
 
     const transfers = [];
@@ -1614,17 +1615,15 @@ function findZeroSumSubsets(items) {
     }
 
     const dp = new Int32Array(1 << n);
-    const parent = new Int32Array(1 << n).fill(-1);
+    const parent = new Int32Array(1 << n);
 
     for (let mask = 1; mask < (1 << n); mask++) {
-        dp[mask] = 0;
         if (subsetSum[mask] === 0) {
             dp[mask] = 1;
-            parent[mask] = mask;
         }
         let sub = (mask - 1) & mask;
         while (sub > 0) {
-            if (subsetSum[sub] === 0 && dp[sub] + dp[mask ^ sub] > dp[mask]) {
+            if (dp[sub] > 0 && dp[mask ^ sub] > 0 && dp[sub] + dp[mask ^ sub] > dp[mask]) {
                 dp[mask] = dp[sub] + dp[mask ^ sub];
                 parent[mask] = sub;
             }
@@ -1637,26 +1636,21 @@ function findZeroSumSubsets(items) {
         return [items];
     }
 
-    const groups = [];
-    let remMask = fullMask;
-    while (remMask > 0) {
-        let p = parent[remMask];
-        if (p <= 0 || p === remMask) {
-            const group = [];
-            for (let i = 0; i < n; i++) {
-                if ((remMask & (1 << i)) !== 0) group.push(items[i]);
-            }
-            groups.push(group);
-            break;
+    function extract(m) {
+        if (parent[m] === 0 || dp[m] <= 1) {
+            return [m];
         }
+        return [...extract(parent[m]), ...extract(m ^ parent[m])];
+    }
+
+    const maskList = extract(fullMask);
+    return maskList.map(m => {
         const group = [];
         for (let i = 0; i < n; i++) {
-            if ((p & (1 << i)) !== 0) group.push(items[i]);
+            if ((m & (1 << i)) !== 0) group.push(items[i]);
         }
-        groups.push(group);
-        remMask ^= p;
-    }
-    return groups;
+        return group;
+    });
 }
 
 function renderTransfers(containerId, transfers) {
@@ -1710,16 +1704,16 @@ async function refreshLeaderboard() {
     showLoading();
     try {
         const [tpRes, rumRes, settleRes] = await Promise.all([
-            supabaseClient.from('teen_patti_games').select('id,data').order('created_at', { ascending: false }).limit(1000),
-            supabaseClient.from('rummy_games').select('id,data').order('created_at', { ascending: false }).limit(1000),
+            supabaseClient.from('teen_patti_games').select('id,data,created_at').order('created_at', { ascending: false }).limit(1000),
+            supabaseClient.from('rummy_games').select('id,data,created_at').order('created_at', { ascending: false }).limit(1000),
             supabaseClient.from('settle_ups').select('*').order('created_at', { ascending: false })
         ]);
 
         if (tpRes.error) throw new Error(tpRes.error.message);
         if (rumRes.error) throw new Error(rumRes.error.message);
 
-        lbData.tp = (tpRes.data || []).map(row => ({ ...row.data, _rowId: row.id }));
-        lbData.rum = (rumRes.data || []).map(row => ({ ...row.data, _rowId: row.id }));
+        lbData.tp = (tpRes.data || []).map(row => ({ ...row.data, _rowId: row.id, _created_at: row.created_at }));
+        lbData.rum = (rumRes.data || []).map(row => ({ ...row.data, _rowId: row.id, _created_at: row.created_at }));
         lbData.settleUps = (settleRes && settleRes.data) || [];
 
     } catch (e) {
@@ -1736,8 +1730,65 @@ async function refreshLeaderboard() {
 }
 
 function renderLeaderboardTable(type) {
-    const playerStats = {};
+    const modeBtn = document.querySelector('#lb-mode-toggle .lb-mode-btn.active');
+    const mode = modeBtn ? modeBtn.dataset.mode : 'current';
 
+    // 1. Compute overall active balances across all games and settle_ups
+    const totalPlayerNet = {};
+    const allGames = [...lbData.tp, ...lbData.rum];
+    allGames.forEach(game => {
+        (game.players || []).forEach(p => {
+            const amt = p.netAmount ?? p.netBalance ?? 0;
+            totalPlayerNet[p.name] = (totalPlayerNet[p.name] || 0) + amt;
+        });
+    });
+    lbData.settleUps.forEach(s => {
+        const amt = parseFloat(s.amount) || 0;
+        if (totalPlayerNet[s.from_player] === undefined) totalPlayerNet[s.from_player] = 0;
+        if (totalPlayerNet[s.to_player] === undefined) totalPlayerNet[s.to_player] = 0;
+        totalPlayerNet[s.from_player] += amt;
+        totalPlayerNet[s.to_player] -= amt;
+    });
+    Object.keys(totalPlayerNet).forEach(name => {
+        let val = Math.round(totalPlayerNet[name] * 100) / 100;
+        if (Math.abs(val) < 0.005) val = 0;
+        totalPlayerNet[name] = val;
+    });
+
+    const hasActiveDebts = Object.values(totalPlayerNet).some(v => Math.abs(v) >= 0.01);
+
+    // If in current mode and all active debts are settled:
+    if (mode === 'current' && !hasActiveDebts) {
+        // All previous sessions are settled -> active values are reset to zero
+        const allPlayerNames = Object.keys(totalPlayerNet);
+        allPlayerNames.sort();
+        let html = `
+            <div class="settle-all-clear" style="padding: 20px 16px; margin-bottom: 12px;">
+                <span class="settle-clear-icon">🎉</span>
+                <div class="settle-clear-text">All Settled!</div>
+                <div class="settle-clear-sub">All active balances are settled (₹0.00 pending)</div>
+            </div>
+            <p class="card-subtitle" style="text-align:center;margin-bottom:12px;">
+                Switch to <strong>All Time</strong> above to view cumulative career rankings.
+            </p>
+            <table class="lb-table"><thead><tr><th>#</th><th>Player</th><th>Net</th><th>Won</th><th>Lost</th><th>Games</th></tr></thead><tbody>`;
+        allPlayerNames.forEach((name, i) => {
+            html += `<tr class="animate-in" style="animation-delay:${i * 0.03}s">
+                <td class="lb-rank">${i + 1}</td>
+                <td>${name}</td>
+                <td>₹0</td>
+                <td>₹0.00</td>
+                <td>₹0.00</td>
+                <td>0</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        $('lb-content').innerHTML = html;
+        return;
+    }
+
+    // Otherwise: accumulate stats for the requested game type
+    const playerStats = {};
     function addStats(name, amount) {
         if (!playerStats[name]) playerStats[name] = { won: 0, lost: 0, games: 0, net: 0 };
         if (amount > 0) playerStats[name].won += amount;
@@ -1746,31 +1797,62 @@ function renderLeaderboardTable(type) {
         playerStats[name].games++;
     }
 
-    if (type === 'combined' || type === 'teenpatti') {
-        lbData.tp.forEach(game => {
-            (game.players || []).forEach(p => {
-                addStats(p.name, p.netAmount || 0);
+    if (mode === 'alltime') {
+        if (type === 'combined' || type === 'teenpatti') {
+            lbData.tp.forEach(game => {
+                (game.players || []).forEach(p => {
+                    addStats(p.name, p.netAmount || 0);
+                });
             });
-        });
-    }
-    if (type === 'combined' || type === 'rummy') {
-        lbData.rum.forEach(game => {
-            (game.players || []).forEach(p => {
-                addStats(p.name, p.netBalance || 0);
+        }
+        if (type === 'combined' || type === 'rummy') {
+            lbData.rum.forEach(game => {
+                (game.players || []).forEach(p => {
+                    addStats(p.name, p.netBalance || 0);
+                });
             });
-        });
-    }
+        }
+    } else {
+        // mode === 'current' with active debts:
+        // Find latest full settlement cutoff timestamp
+        let cutoffTime = 0;
+        if (lbData.settleUps.length > 0) {
+            cutoffTime = Math.max(...lbData.settleUps.map(s => new Date(s.created_at).getTime()));
+        }
 
-    // Apply settlements for 'current' mode
-    const modeBtn = document.querySelector('#lb-mode-toggle .lb-mode-btn.active');
-    const mode = modeBtn ? modeBtn.dataset.mode : 'current';
-
-    if (mode === 'current') {
-        lbData.settleUps.forEach(s => {
-            const amt = parseFloat(s.amount) || 0;
-            if (playerStats[s.from_player]) playerStats[s.from_player].net += amt;
-            if (playerStats[s.to_player]) playerStats[s.to_player].net -= amt;
+        const activeTp = lbData.tp.filter(g => {
+            const t = g.createdAt || (g._created_at ? new Date(g._created_at).getTime() : 0);
+            return t > cutoffTime;
         });
+        const activeRum = lbData.rum.filter(g => {
+            const t = g.createdAt || (g._created_at ? new Date(g._created_at).getTime() : 0);
+            return t > cutoffTime;
+        });
+
+        if (type === 'combined' || type === 'teenpatti') {
+            activeTp.forEach(game => {
+                (game.players || []).forEach(p => {
+                    addStats(p.name, p.netAmount || 0);
+                });
+            });
+        }
+        if (type === 'combined' || type === 'rummy') {
+            activeRum.forEach(game => {
+                (game.players || []).forEach(p => {
+                    addStats(p.name, p.netBalance || 0);
+                });
+            });
+        }
+
+        // Apply any recent settle_ups created after cutoffTime
+        const recentSettles = lbData.settleUps.filter(s => new Date(s.created_at).getTime() > cutoffTime);
+        if (type === 'combined') {
+            recentSettles.forEach(s => {
+                const amt = parseFloat(s.amount) || 0;
+                if (playerStats[s.from_player]) playerStats[s.from_player].net += amt;
+                if (playerStats[s.to_player]) playerStats[s.to_player].net -= amt;
+            });
+        }
     }
 
     const entries = Object.entries(playerStats)
@@ -1788,7 +1870,7 @@ function renderLeaderboardTable(type) {
         .sort((a, b) => b.net - a.net);
 
     if (entries.length === 0) {
-        $('lb-content').innerHTML = '<div class="empty-state">No games played yet. Start a game!</div>';
+        $('lb-content').innerHTML = '<div class="empty-state">No games played yet in this category.</div>';
         return;
     }
 
@@ -1924,8 +2006,8 @@ async function refreshSettlements() {
     try {
         // Fetch all game data (same source as leaderboard)
         const [tpRes, rumRes, settleRes] = await Promise.all([
-            supabaseClient.from('teen_patti_games').select('id,data').limit(1000),
-            supabaseClient.from('rummy_games').select('id,data').limit(1000),
+            supabaseClient.from('teen_patti_games').select('id,data,created_at').order('created_at', { ascending: false }).limit(1000),
+            supabaseClient.from('rummy_games').select('id,data,created_at').order('created_at', { ascending: false }).limit(1000),
             supabaseClient.from('settle_ups').select('*').order('created_at', { ascending: false })
         ]);
 
@@ -1998,6 +2080,9 @@ async function refreshSettlements() {
                         playerNet[b.player] = b.balance;
                         distributed += share;
                     });
+                } else if (balances.length > 0) {
+                    balances[0].balance = Math.round((balances[0].balance + Math.abs(rawSum)) * 100) / 100;
+                    playerNet[balances[0].player] = balances[0].balance;
                 }
             } else {
                 // More credit than debt → increase losers to absorb
@@ -2013,6 +2098,9 @@ async function refreshSettlements() {
                         playerNet[b.player] = b.balance;
                         distributed += share;
                     });
+                } else if (balances.length > 0) {
+                    balances[0].balance = Math.round((balances[0].balance - rawSum) * 100) / 100;
+                    playerNet[balances[0].player] = balances[0].balance;
                 }
             }
         }
@@ -2043,7 +2131,10 @@ async function refreshSettlements() {
     }
 }
 
+let currentSettlementTransfers = [];
+
 function renderSettlementView(playerNet, playerTransfers, transfers, mismatchAmount, settleUps) {
+    currentSettlementTransfers = transfers || [];
     const playersContainer = $('settle-players');
     const quickContainer = $('settle-quick');
     const quickCard = $('settle-quick-card');
@@ -2263,19 +2354,29 @@ async function settleTransfer(from, to, amount) {
 async function settleAllTransfers() {
     showLoading();
     try {
-        const pendingTransfers = [];
-        const btns = document.querySelectorAll('.btn-settle');
-        btns.forEach(btn => {
-            const amount = parseFloat(btn.dataset.amount);
-            if (amount > 0) {
-                pendingTransfers.push({
-                    from_player: btn.dataset.from,
-                    to_player: btn.dataset.to,
-                    amount: amount,
-                    note: 'Bulk settle all via app'
-                });
-            }
-        });
+        let pendingTransfers = (currentSettlementTransfers && currentSettlementTransfers.length > 0)
+            ? currentSettlementTransfers.map(t => ({
+                from_player: t.from,
+                to_player: t.to,
+                amount: t.amount,
+                note: 'Bulk settle all via app'
+            }))
+            : [];
+
+        if (pendingTransfers.length === 0) {
+            const btns = document.querySelectorAll('.btn-settle');
+            btns.forEach(btn => {
+                const amount = parseFloat(btn.dataset.amount);
+                if (amount > 0) {
+                    pendingTransfers.push({
+                        from_player: btn.dataset.from,
+                        to_player: btn.dataset.to,
+                        amount: amount,
+                        note: 'Bulk settle all via app'
+                    });
+                }
+            });
+        }
 
         if (pendingTransfers.length === 0) {
             toast('Nothing to settle');
