@@ -2,7 +2,10 @@
   "name": "c54-casino",
   "version": "1.0.0",
   "scripts": {
-    "test": "node test_suite.js"
+    "test": "node test_suite.js && node security.test.js",
+    "test:suite": "node test_suite.js",
+    "test:security": "node security.test.js",
+    "keepalive": "node keepalive.js"
   },
   "dependencies": {
     "pg": "^8.21.0"
