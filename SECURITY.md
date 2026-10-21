@@ -46,7 +46,7 @@ literal password ever shows up in a tracked file again.
 
 | Issue | Status |
 | --- | --- |
-| A **superuser** Postgres connection string (with password) was committed in `init_tables.js` and in `test_suite.js` and published to a public GitHub repository. A superuser **bypasses RLS entirely**, so anyone who cloned the repo could read and tamper with every row. | **Removed** from the code. The password was **rotated at the provider level** (Supabase Dashboard → Database → Reset password). The old value still exists in the repository's **git history** — see §7. |
+| A **superuser** Postgres connection string (with password) was committed in `init_tables.js` and in `test_suite.js` and published to a public GitHub repository. A superuser **bypasses RLS entirely**, so anyone who cloned the repo could read and tamper with every row. | **Removed** from the code and **purged from the git history** (`git filter-repo --replace-text`, all 24 commits, force-pushed). The live password was **not** rotated — see §7 for why and for the two-minute dashboard action that closes it. |
 | `npm test` connected to the **production** database and asserted hardcoded production row counts (38 Teen Patti games / 36 Rummy games), so it both mutated production and failed whenever real gameplay changed the numbers. | **Fixed.** The suite now reads `TEST_DATABASE_URL` from the environment, refuses to run against production, and uses **relative** assertions. |
 | RLS granted `USING (true)` to anonymous callers for SELECT/INSERT on all six tables and UPDATE on `live_sessions` / `settlement_ledger`. | **Tightened.** The policy set is now the minimum the app needs, with an explicit deny on anonymous DELETE, scoped INSERT checks, and a policy sweep that removes legacy permissive policies. |
 | `supabase-config.js` was the only way to point the app at a project — a rebuild was needed for every change. | **Fixed.** Values can be overridden at runtime via `window.__ENV__`. |
@@ -146,10 +146,27 @@ npm test          # runs test_suite.js AND security.test.js
 
 ## 7. Known open items
 
-* **Git history still contains the old superuser password.** Removing it from
-  the working tree does not remove it from the commit history. The password
-  was rotated, so it is worthless, but the history should still be cleaned
-  (`git filter-repo`) and the repository force-pushed.
+* **The old superuser password is still valid, and it was still in the git
+  history until 2026-10-21.** Both facts were corrected on that date:
+  * **History cleaned.** The repository history was rewritten with
+    `git filter-repo --replace-text`, replacing the password with
+    `<REDACTED>` in all 24 commits, and the rewritten history was
+    force-pushed. A scan of every commit in the rewritten history confirms
+    the password no longer appears anywhere. The commit hashes changed as a
+    result — anyone who cloned before this date should re-clone.
+  * **The live database was never rotated, and the password still works.**
+    The Supabase Management API refuses to rotate a database password on a
+    Free Plan project, and the `postgres` role on this project is not a
+    superuser (`rolsuper = false`), so it cannot run
+    `ALTER USER postgres WITH PASSWORD ...` for itself either. The
+    connection is only reachable over IPv6, which this host does not have.
+    **Action required by the owner:** open
+    *Supabase Dashboard → C54- Casino → Project Settings → Database →
+    Reset database password*, then set the new value as `DATABASE_URL` in
+    the local `.env` before running `init_tables.js`. This is a
+    two-minute dashboard action and it closes the last open item.
+  * Until that is done, the old password remains a live credential for a
+    superuser role on a public database.
 * **`node_modules/` is committed to the repository** (140 tracked files). It
   should be untracked; see `.gitignore`.
 * **The app is a no-login PWA** — see the trade-off note in §4. Until
